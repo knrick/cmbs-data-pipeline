@@ -1,0 +1,368 @@
+{
+    "columns": {
+        "assetTypeNumber": {
+            "type": "string",
+            "nullable": true,
+            "description": "Asset type identifier"
+        },
+        "assetNumber": {
+            "type": "string",
+            "nullable": false,
+            "description": "Unique identifier for the asset"
+        },
+        "company": {
+            "type": "string",
+            "nullable": false,
+            "description": "Company name"
+        },
+        "trust": {
+            "type": "string",
+            "nullable": false,
+            "description": "Trust name"
+        },
+        "source_file": {
+            "type": "string",
+            "nullable": false,
+            "description": "Source file name"
+        },
+        "reportingPeriodBeginningDate": {
+            "type": "date",
+            "nullable": false,
+            "description": "Start date of reporting period"
+        },
+        "reportingPeriodEndDate": {
+            "type": "date",
+            "nullable": false,
+            "description": "End date of reporting period"
+        },
+        "originatorName": {
+            "type": "string",
+            "nullable": true,
+            "description": "Name of loan originator"
+        },
+        "originationDate": {
+            "type": "date",
+            "nullable": true,
+            "description": "Date of loan origination"
+        },
+        "originalLoanAmount": {
+            "type": "Decimal(11,2)",
+            "nullable": true,
+            "description": "Original loan amount"
+        },
+        "originalTermLoanNumber": {
+            "type": "UInt8",
+            "nullable": true,
+            "description": "Original loan term"
+        },
+        "maturityDate": {
+            "type": "date",
+            "nullable": true,
+            "description": "Loan maturity date"
+        },
+        "originalInterestRatePercentage": {
+            "type": "Decimal(10,9)",
+            "nullable": true,
+            "description": "Original interest rate"
+        },
+        "interestRateSecuritizationPercentage": {
+            "type": "Decimal(10,9)",
+            "nullable": true,
+            "description": "Securitization interest rate"
+        },
+        "interestAccrualMethodCode": {
+            "type": "UInt8",
+            "nullable": true,
+            "description": "Interest accrual method"
+        },
+        "originalInterestRateTypeCode": {
+            "type": "string",
+            "nullable": true,
+            "description": "Original interest rate type"
+        },
+        "originalInterestOnlyTermNumber": {
+            "type": "UInt8",
+            "nullable": true,
+            "description": "Original interest-only term"
+        },
+        "firstLoanPaymentDueDate": {
+            "type": "date",
+            "nullable": true,
+            "description": "First payment due date"
+        },
+        "underwritingIndicator": {
+            "type": "bool",
+            "nullable": true,
+            "description": "Underwriting indicator"
+        },
+        "lienPositionSecuritizationCode": {
+            "type": "char",
+            "nullable": true,
+            "description": "Lien position code"
+        },
+        "loanStructureCode": {
+            "type": "string",
+            "nullable": true,
+            "description": "Loan structure code"
+        },
+        "paymentTypeCode": {
+            "type": "UInt8",
+            "nullable": true,
+            "description": "Payment type code"
+        },
+        "periodicPrincipalAndInterestPaymentSecuritizationAmount": {
+            "type": "Decimal(9,2)",
+            "nullable": true,
+            "description": "Periodic P&I payment amount"
+        },
+        "scheduledPrincipalBalanceSecuritizationAmount": {
+            "type": "Decimal(11,2)",
+            "nullable": true,
+            "description": "Scheduled principal balance"
+        },
+        "paymentFrequencyCode": {
+            "type": "UInt8",
+            "nullable": true,
+            "description": "Payment frequency code"
+        },
+        "NumberPropertiesSecuritization": {
+            "type": "UInt8",
+            "nullable": true,
+            "description": "Number of properties in securitization"
+        },
+        "NumberProperties": {
+            "type": "UInt8",
+            "nullable": true,
+            "description": "Total number of properties"
+        },
+        "graceDaysAllowedNumber": {
+            "type": "UInt8",
+            "nullable": true,
+            "description": "Number of grace days allowed"
+        },
+        "interestOnlyIndicator": {
+            "type": "bool",
+            "nullable": true,
+            "description": "Interest only indicator"
+        },
+        "balloonIndicator": {
+            "type": "bool",
+            "nullable": true,
+            "description": "Balloon payment indicator"
+        },
+        "prepaymentPremiumIndicator": {
+            "type": "bool",
+            "nullable": true,
+            "description": "Prepayment premium indicator"
+        },
+        "negativeAmortizationIndicator": {
+            "type": "bool",
+            "nullable": true,
+            "description": "Negative amortization indicator"
+        },
+        "modifiedIndicator": {
+            "type": "bool",
+            "nullable": true,
+            "description": "Modified loan indicator"
+        },
+        "prepaymentLockOutEndDate": {
+            "type": "date",
+            "nullable": true,
+            "description": "Prepayment lock-out end date"
+        },
+        "assetAddedIndicator": {
+            "type": "bool",
+            "nullable": true,
+            "description": "Asset added indicator"
+        },
+        "reportPeriodModificationIndicator": {
+            "type": "bool",
+            "nullable": true,
+            "description": "Report period modification indicator"
+        },
+        "reportPeriodBeginningScheduleLoanBalanceAmount": {
+            "type": "Decimal(11,2)",
+            "nullable": true,
+            "description": "Beginning scheduled loan balance"
+        },
+        "totalScheduledPrincipalInterestDueAmount": {
+            "type": "Decimal(9,2)",
+            "nullable": true,
+            "description": "Total scheduled P&I due"
+        },
+        "reportPeriodInterestRatePercentage": {
+            "type": "Decimal(10,9)",
+            "nullable": true,
+            "description": "Report period interest rate"
+        },
+        "servicerTrusteeFeeRatePercentage": {
+            "type": "Decimal(10,9)",
+            "nullable": true,
+            "description": "Servicer/trustee fee rate"
+        },
+        "scheduledInterestAmount": {
+            "type": "Decimal(9,2)",
+            "nullable": true,
+            "description": "Scheduled interest amount"
+        },
+        "scheduledPrincipalAmount": {
+            "type": "Decimal(9,2)",
+            "nullable": true,
+            "description": "Scheduled principal amount"
+        },
+        "unscheduledPrincipalCollectedAmount": {
+            "type": "Decimal(11,2)",
+            "nullable": true,
+            "description": "Unscheduled principal collected"
+        },
+        "reportPeriodEndActualBalanceAmount": {
+            "type": "Decimal(11,2)",
+            "nullable": true,
+            "description": "End actual balance"
+        },
+        "reportPeriodEndScheduledLoanBalanceAmount": {
+            "type": "Decimal(11,2)",
+            "nullable": true,
+            "description": "End scheduled loan balance"
+        },
+        "paidThroughDate": {
+            "type": "date",
+            "nullable": true,
+            "description": "Paid through date"
+        },
+        "servicingAdvanceMethodCode": {
+            "type": "UInt8",
+            "nullable": true,
+            "description": "Servicing advance method"
+        },
+        "nonRecoverabilityIndicator": {
+            "type": "bool",
+            "nullable": true,
+            "description": "Non-recoverability indicator"
+        },
+        "totalPrincipalInterestAdvancedOutstandingAmount": {
+            "type": "Decimal(11,2)",
+            "nullable": true,
+            "description": "Total P&I advances outstanding"
+        },
+        "totalTaxesInsuranceAdvancesOutstandingAmount": {
+            "type": "Decimal(11,2)",
+            "nullable": true,
+            "description": "Total T&I advances outstanding"
+        },
+        "otherExpensesAdvancedOutstandingAmount": {
+            "type": "Decimal(11,2)",
+            "nullable": true,
+            "description": "Other expenses advances outstanding"
+        },
+        "paymentStatusLoanCode": {
+            "type": "char",
+            "nullable": true,
+            "description": "Payment status code"
+        },
+        "primaryServicerName": {
+            "type": "string",
+            "nullable": true,
+            "description": "Primary servicer name"
+        },
+        "assetSubjectDemandIndicator": {
+            "type": "bool",
+            "nullable": true,
+            "description": "Asset subject to demand"
+        },
+        "originalAmortizationTermNumber": {
+            "type": "UInt16",
+            "nullable": true,
+            "description": "Original amortization term"
+        },
+        "yieldMaintenanceEndDate": {
+            "type": "date",
+            "nullable": true,
+            "description": "Yield maintenance end date"
+        },
+        "prepaymentPremiumsEndDate": {
+            "type": "date",
+            "nullable": true,
+            "description": "Prepayment premiums end date"
+        },
+        "firstPaymentAdjustmentDate": {
+            "type": "date",
+            "nullable": true,
+            "description": "First payment adjustment date"
+        },
+        "lastModificationDate": {
+            "type": "date",
+            "nullable": true,
+            "description": "Last modification date"
+        },
+        "modificationCode": {
+            "type": "UInt8",
+            "nullable": true,
+            "description": "Modification code"
+        },
+        "liquidationPrepaymentDate": {
+            "type": "date",
+            "nullable": true,
+            "description": "Liquidation prepayment date"
+        },"liquidationPrepaymentCode": {
+            "type": "UInt8",
+            "nullable": true,
+            "description": "Liquidation prepayment code"
+        },
+        "mostRecentMasterServicerReturnDate": {
+            "type": "date",
+            "nullable": true,
+            "description": "Most recent master servicer return date"
+        },
+        "mostRecentSpecialServicerTransferDate": {
+            "type": "date",
+            "nullable": true,
+            "description": "Most recent special servicer transfer date"
+        },
+        "nextInterestRatePercentage": {
+            "type": "Decimal(10,9)",
+            "nullable": true,
+            "description": "Next interest rate"
+        },
+        "otherInterestAdjustmentAmount": {
+            "type": "Decimal(3,2)",
+            "nullable": true,
+            "description": "Other interest adjustment amount"
+        },
+        "otherPrincipalAdjustmentAmount": {
+            "type": "Decimal(3,2)",
+            "nullable": true,
+            "description": "Other principal adjustment amount"
+        },
+        "postModificationAmortizationPeriodAmount": {
+            "type": "UInt8",
+            "nullable": true,
+            "description": "Post modification amortization period amount"
+        },
+        "postModificationMaturityDate": {
+            "type": "date",
+            "nullable": true,
+            "description": "Post modification maturity date"
+        },
+        "prepaymentPremiumYieldMaintenanceReceivedAmount": {
+            "type": "Decimal(9,2)",
+            "nullable": true,
+            "description": "Prepayment premium yield maintenance received amount"
+        },
+        "realizedLossToTrustAmount": {
+            "type": "Decimal(3,2)",
+            "nullable": true,
+            "description": "Realized loss to trust amount"
+        },
+        "repurchaseAmount": {
+            "type": "Decimal(9,2)",
+            "nullable": true,
+            "description": "Repurchase amount"
+        },
+        "workoutStrategyCode": {
+            "type": "UInt8",
+            "nullable": true,
+            "description": "Workout strategy code"
+        }
+    }
+} 

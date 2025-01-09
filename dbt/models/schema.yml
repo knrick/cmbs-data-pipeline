@@ -1,0 +1,98 @@
+version: 2
+
+sources:
+  - name: cmbs
+    description: "CMBS loan data from SEC EDGAR filings"
+    tables:
+      - name: compressed_loans
+        description: "Compressed CMBS loan data from PySpark processing"
+        columns:
+          - name: trust
+            description: "CMBS trust identifier"
+            tests:
+              - not_null
+          - name: loan_number
+            description: "Unique loan identifier within trust"
+            tests:
+              - not_null
+          - name: period_start
+            description: "Start of the reporting period"
+            tests:
+              - not_null
+
+models:
+  - name: stg_cmbs_loans
+    description: "Staging model for CMBS loans"
+    columns:
+      - name: trust
+        description: "CMBS trust identifier"
+        tests:
+          - not_null
+      - name: loan_number
+        description: "Unique loan identifier within trust"
+        tests:
+          - not_null
+      - name: period_start
+        description: "Start of the reporting period"
+        tests:
+          - not_null
+    tests:
+      - unique:
+          columns: ["trust", "loan_number", "period_start"]
+
+  - name: dim_properties
+    description: "Property dimension table"
+    columns:
+      - name: property_key
+        description: "Surrogate key for property"
+        tests:
+          - unique
+          - not_null
+      - name: property_type
+        description: "Type of property (e.g., Office, Retail, Multifamily)"
+        tests:
+          - accepted_values:
+              values: ['OFFICE', 'RETAIL', 'MULTIFAMILY', 'INDUSTRIAL', 'HOTEL', 'MIXED_USE', 'OTHER']
+
+  - name: fct_loan_performance
+    description: "Fact table for loan performance metrics"
+    columns:
+      - name: property_key
+        description: "Foreign key to dim_properties"
+        tests:
+          - relationships:
+              to: ref('dim_properties')
+              field: property_key
+      - name: period_start
+        description: "Start of the reporting period"
+        tests:
+          - not_null
+      - name: current_loan_amount
+        description: "Current outstanding loan amount"
+        tests:
+          - not_null
+          - positive_value
+    tests:
+      - unique:
+          columns: ["property_key", "period_start"]
+
+  - name: loan_risk_metrics
+    description: "Analytics model for loan risk assessment"
+    columns:
+      - name: trust
+        description: "CMBS trust identifier"
+        tests:
+          - not_null
+      - name: period_start
+        description: "Reporting period"
+        tests:
+          - not_null
+      - name: risk_score
+        description: "Composite risk score (1-10, higher is riskier)"
+        tests:
+          - not_null
+          - accepted_values:
+              values: [0,1,2,3,4,5,6,7,8,9,10]
+    tests:
+      - unique:
+          columns: ["trust", "property_type", "property_state", "period_start"] 

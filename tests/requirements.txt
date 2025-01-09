@@ -1,0 +1,7 @@
+pytest>=7.4.0
+pytest-cov>=4.1.0  # For coverage reporting
+pytest-xdist>=3.3.0  # For parallel test execution
+pytest-timeout>=2.1.0  # For test timeouts
+pyspark>=3.4.0  # Required for Spark testing
+pandas>=2.0.0  # Required for data testing
+python-dateutil>=2.8.2  # For date handling in tests 

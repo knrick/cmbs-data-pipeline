@@ -1,0 +1,31 @@
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Airflow
+airflow-docker/airflow.db
+airflow-docker/airflow-webserver.pid
+airflow-docker/logs/
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+test.ipynb
+
+# DBT
+dbt/logs/
+dbt/target/
+
+# Data and Metadata files
+data/
+data_profiles/
+processed_data/
+logs/
+schemas/
+
+# Environment files
+.env
+Environment.yml
