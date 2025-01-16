@@ -130,19 +130,7 @@ class XMLProcessor:
             logger.info("DataFrame saved successfully")
                 
         except Exception as e:
-            logger.error(f"Error saving DataFrame to {output_path}: {str(e)}")
-            # Try alternative save method
-            try:
-                logger.info("Attempting alternative save method...")
-                # Save as single file
-                df.coalesce(1).write \
-                    .mode("overwrite") \
-                    .option("compression", "none") \
-                    .parquet(output_path)
-                logger.info("DataFrame saved successfully using alternative method")
-            except Exception as e2:
-                logger.error(f"Alternative save method failed: {str(e2)}")
-                raise Exception(f"Failed to save DataFrame using both methods. Original error: {str(e)}, Alternative error: {str(e2)}")
+            raise Exception(f"Error saving DataFrame to {output_path}: {str(e)}")
     
     def process_directory(self, input_dir):
         """Process XML files by trust, processing each trust folder separately."""
@@ -230,7 +218,104 @@ class XMLProcessor:
                 # Create loans dataframe
                 loans_df = df.where(F.col("reportingPeriodEndDate").isNotNull()) \
                             .drop("property")
-                
+
+                # Check for existing records in parquet files and remove duplicates
+                loans_output_path = os.path.join(
+                    output_dir_bc.value, "parquet", company_name, trust_name, "loans"
+                )
+                properties_output_path = os.path.join(
+                    output_dir_bc.value, "parquet", company_name, trust_name, "properties"
+                )
+
+                # Remove existing loan records
+                if os.path.exists(loans_output_path):
+                    logger.info(f"Checking for existing loan records in {loans_output_path}")
+                    # Create two versions of existing loans with different date formats
+                    existing_loans_base = self.spark.read.parquet(loans_output_path) \
+                        .select(
+                            F.col("assetNumber").cast("string").alias("assetNumber"),
+                            F.col("reportingPeriodEndDate").alias("reportingPeriodEndDate")
+                        )
+                    
+                    # Version 1: yyyy-MM-dd
+                    existing_loans_iso = existing_loans_base \
+                        .select(
+                            "assetNumber",
+                            F.date_format("reportingPeriodEndDate", "yyyy-MM-dd").alias("reportingPeriodEndDate")
+                        )
+                    
+                    # Version 2: MM-dd-yyyy
+                    existing_loans_us = existing_loans_base \
+                        .select(
+                            "assetNumber",
+                            F.date_format("reportingPeriodEndDate", "MM-dd-yyyy").alias("reportingPeriodEndDate")
+                        )
+                    
+                    # Combine both versions
+                    existing_loans = existing_loans_iso.union(existing_loans_us)
+                    
+                    # Anti-join to keep only new records
+                    original_count = loans_df.count()
+                    loans_df = loans_df.join(
+                        existing_loans,
+                        ["assetNumber", "reportingPeriodEndDate"],
+                        "leftanti"
+                    )
+                    new_count = loans_df.count()
+                    if original_count > new_count:
+                        logger.info(f"Filtered out {original_count - new_count} existing loan records")
+                    
+                    if new_count == 0:
+                        logger.info("No new loan records to process")
+                        loans_df = None
+
+                # Remove existing property records
+                if properties_df is not None and os.path.exists(properties_output_path):
+                    logger.info(f"Checking for existing property records in {properties_output_path}")
+                    # Create two versions of existing properties with different date formats
+                    existing_properties_base = self.spark.read.parquet(properties_output_path) \
+                        .select(
+                            F.col("assetNumber").cast("string").alias("assetNumber"),
+                            F.col("reportingPeriodEndDate").alias("reportingPeriodEndDate")
+                        )
+                    
+                    # Version 1: yyyy-MM-dd
+                    existing_properties_iso = existing_properties_base \
+                        .select(
+                            "assetNumber",
+                            F.date_format("reportingPeriodEndDate", "yyyy-MM-dd").alias("reportingPeriodEndDate")
+                        )
+                    
+                    # Version 2: MM-dd-yyyy
+                    existing_properties_us = existing_properties_base \
+                        .select(
+                            "assetNumber",
+                            F.date_format("reportingPeriodEndDate", "MM-dd-yyyy").alias("reportingPeriodEndDate")
+                        )
+                    
+                    # Combine both versions
+                    existing_properties = existing_properties_iso.union(existing_properties_us)
+                    
+                    # Anti-join to keep only new records
+                    original_count = properties_df.count()
+                    properties_df = properties_df.join(
+                        existing_properties,
+                        ["assetNumber", "reportingPeriodEndDate"],
+                        "leftanti"
+                    )
+                    new_count = properties_df.count()
+                    if original_count > new_count:
+                        logger.info(f"Filtered out {original_count - new_count} existing property records")
+                    
+                    if new_count == 0:
+                        logger.info("No new property records to process")
+                        properties_df = None
+
+                # Skip processing if no new records
+                if loans_df is None and properties_df is None:
+                    logger.info(f"No new records to process for trust: {trust_name}")
+                    continue
+
                 # Prepare both DataFrames for parallel validation
                 validation_dfs = []
                 validation_configs = []
@@ -275,97 +360,31 @@ class XMLProcessor:
                 if loans_count_before > loans_count_after:
                     logger.info(f"Removed {loans_count_before - loans_count_after} duplicate loan records")
                 
-                # Save trust results using Spark's built-in parallelism
+                # Save trust results
                 if loans_df is not None:
-                    loans_output_path = os.path.join(
-                        output_dir_bc.value, "parquet", company_name, trust_name, "loans"
-                    )
-                    os.makedirs(os.path.dirname(loans_output_path), exist_ok=True)
+                    os.makedirs(loans_output_path, exist_ok=True)
                     
-                    # Check if data for these reporting dates already exists
-                    if os.path.exists(loans_output_path):
-                        existing_dates = set(
-                            self.spark.read.parquet(loans_output_path)
-                            .select("reportingPeriodEndDate")
-                            .distinct()
-                            .toPandas()["reportingPeriodEndDate"]
-                            .astype(str)
-                        )
-                        
-                        # Filter out records with dates that already exist
-                        new_dates = set(
-                            loans_df.select("reportingPeriodEndDate")
-                            .distinct()
-                            .toPandas()["reportingPeriodEndDate"]
-                            .astype(str)
-                        )
-                        
-                        if new_dates.issubset(existing_dates):
-                            logger.info(f"Skipping loans save for {trust_name} - all dates already exist")
-                        else:
-                            # Filter to only new dates
-                            loans_df = loans_df.filter(
-                                ~F.col("reportingPeriodEndDate").cast("string").isin(list(existing_dates))
-                            )
-                            
-                            if loans_df.count() > 0:
-                                logger.info(f"Appending {loans_df.count()} new loan records for {trust_name}")
-                                loans_df.write \
-                                    .mode("append") \
-                                    .option("compression", "snappy") \
-                                    .partitionBy("reportingPeriodEndDate") \
-                                    .parquet(loans_output_path)
+                    logger.info(f"Saving {loans_df.count()} loan records for {trust_name}")
+                    loans_df.write \
+                        .mode("append") \
+                        .option("compression", "snappy") \
+                        .partitionBy("reportingPeriodEndDate") \
+                        .parquet(loans_output_path)
                 
                 if properties_df is not None:
-                    # Remove duplicates from properties
-                    properties_count_before = properties_df.count()
-                    properties_df = properties_df.dropDuplicates(["assetNumber", "reportingPeriodEndDate"])
-                    properties_count_after = properties_df.count()
-                    if properties_count_before > properties_count_after:
-                        logger.info(f"Removed {properties_count_before - properties_count_after} duplicate property records")
+                    os.makedirs(properties_output_path, exist_ok=True)
                     
-                    properties_output_path = os.path.join(
-                        output_dir_bc.value, "parquet", company_name, trust_name, "properties"
-                    )
-                    os.makedirs(os.path.dirname(properties_output_path), exist_ok=True)
-                    
-                    # For properties, check if asset numbers already exist
-                    if os.path.exists(properties_output_path):
-                        existing_assets = set(
-                            self.spark.read.parquet(properties_output_path)
-                            .select("assetNumber")
-                            .distinct()
-                            .toPandas()["assetNumber"]
-                            .astype(str)
-                        )
-                        
-                        new_assets = set(
-                            properties_df.select("assetNumber")
-                            .distinct()
-                            .toPandas()["assetNumber"]
-                            .astype(str)
-                        )
-                        
-                        if new_assets.issubset(existing_assets):
-                            logger.info(f"Skipping properties save for {trust_name} - all assets already exist")
-                        else:
-                            # Filter to only new assets
-                            properties_df = properties_df.filter(
-                                ~F.col("assetNumber").cast("string").isin(list(existing_assets))
-                            )
-                            
-                            if properties_df.count() > 0:
-                                logger.info(f"Appending {properties_df.count()} new property records for {trust_name}")
-                                properties_df.write \
-                                    .mode("append") \
-                                    .option("compression", "snappy") \
-                                    .parquet(properties_output_path)
+                    logger.info(f"Saving {properties_df.count()} property records for {trust_name}")
+                    properties_df.write \
+                        .mode("append") \
+                        .option("compression", "snappy") \
+                        .parquet(properties_output_path)
                 
                 # Create trust summary
                 trust_summary = {
-            "company": company_name,
-            "trust": trust_name,
-            "processing_timestamp": datetime.now().isoformat(),
+                    "company": company_name,
+                    "trust": trust_name,
+                    "processing_timestamp": datetime.now().isoformat(),
                     "files_processed": len(xml_files),
                     "files_succeeded": len(xml_files),  # All files processed together
                     "files_failed": 0,
@@ -373,8 +392,8 @@ class XMLProcessor:
                     "total_properties": properties_df.count() if properties_df is not None else 0,
                     "data_quality": {
                         "loans": {
-            "duplicates": duplicates,
-                            "suspicious_values": suspicious
+                        "duplicates": duplicates,
+                        "suspicious_values": suspicious
                         }
                     }
                 }

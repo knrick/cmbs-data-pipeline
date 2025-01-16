@@ -27,8 +27,8 @@ class SchemaManager:
         
         # Load both schemas
         logger.info("Loading schemas")
-        self.loan_schema = self._load_current_schema("loan", "loan_schema.json")
-        self.property_schema = self._load_current_schema("property", "property_schema.json")
+        self.loan_schema, self.loan_schema_file = self._load_current_schema("loan", "loan_schema.json")
+        self.property_schema, self.property_schema_file = self._load_current_schema("property", "property_schema.json")
         logger.info("Schemas loaded successfully")
         
         # Enhanced type mapping with size considerations
@@ -66,6 +66,11 @@ class SchemaManager:
         # Decimal type cache to avoid recreating the same types
         self._decimal_type_cache = {}
         
+    def _get_schema_file(self, schema):
+        """Get the file path for the schema type."""
+        schema_dir = self.loan_schema_dir if schema["type"] == "loan" else self.property_schema_dir
+        return os.path.join(schema_dir, f"{schema['type']}_schema_v{schema['version']}.json")
+    
     def _load_current_schema(self, schema_type, base_schema_file):
         """Load the most recent schema version for the specified type."""
         logger.info(f"Loading current schema for {schema_type}")
@@ -83,68 +88,64 @@ class SchemaManager:
                 
             with open(base_schema_path, 'r') as f:
                 base_schema = json.load(f)
+                base_schema["type"] = schema_type
                 base_schema["version"] = 1
                 base_schema["effective_date"] = datetime.now().isoformat()
             
-            self._save_schema(schema_type, base_schema)
+            filepath = self._save_schema(base_schema)
             logger.info(f"Created initial schema version for {schema_type}")
-            return base_schema
+            return base_schema, filepath
             
         latest_schema_file = schema_files[-1]
         logger.info(f"Loading schema from {latest_schema_file}")
-        with open(os.path.join(schema_dir, latest_schema_file), 'r') as f:
-            return json.load(f)
+        filepath = os.path.join(schema_dir, latest_schema_file)
+        with open(filepath, 'r') as f:
+            return json.load(f), filepath
     
-    def _save_schema(self, schema_type, schema=None):
+    def _save_schema(self, schema):
         """Save schema to file."""
         try:
-            schema = schema or (self.loan_schema if schema_type == "loan" else self.property_schema)
             version = schema["version"]
-            
+            schema_type = schema["type"]
             # Add metadata
             schema["effective_date"] = datetime.now().isoformat()
             
             # Save to file
-            filepath = os.path.join(
-                self.schema_dir,
-                f"{schema_type}_schema_v{version}.json"
-            )
+            filepath = self._get_schema_file(schema)
             
             with open(filepath, "w") as f:
                 json.dump(schema, f, indent=2)
                 
             logger.info(f"Saving schema version {version} for {schema_type}")
             logger.info(f"Schema saved to {filepath}")
+
+            return filepath
             
         except Exception as e:
             logger.error(f"Error saving schema: {str(e)}")
             raise
     
-    def update_schema(self, schema_type="loan", field_specs=None):
+    def update_schema(self, schema, replace=False):
         """Update schema with new field specifications.
         
         Args:
             schema_type: Type of schema to update ('loan' or 'property')
             field_specs: Dictionary of field specifications to update
         """
-        logger.info(f"Updating {schema_type} schema")
+        logger.info(f"Updating {schema['type']} schema")
         
         # Create a new schema with the provided field specs
-        new_schema = {
-            "version": self._get_next_version(schema_type),
-            "columns": field_specs or {}
-        }
+        schema["version"] = self._get_next_version(schema["type"])
         
         # Replace the existing schema
-        if schema_type == "loan":
-            self.loan_schema = new_schema
-        else:
-            self.property_schema = new_schema
+        if replace:
+            if schema["type"] == "loan":
+                self.loan_schema = schema
+            else:
+                self.property_schema = schema
             
         # Save updated schema
-        self._save_schema(schema_type)
-        
-        return self.get_spark_schema(schema_type)
+        self._save_schema(schema)
     
     def get_schema_history(self, schema_type):
         """Get the history of schema versions."""
