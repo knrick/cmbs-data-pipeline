@@ -187,6 +187,9 @@ class SchemaManager:
         Args:
             df: The DataFrame to validate
             validation_configs: String schema type ('loan' or 'property') or list of schema types
+
+        Returns:
+            dict: Dictionary with keys 'loan' and/or 'property' containing the validated DataFrames
         """
         logger.info("Validating DataFrame against schema")
 
@@ -197,20 +200,52 @@ class SchemaManager:
             elif not isinstance(validation_configs, list):
                 raise ValueError("validation_configs must be a string schema type or list of schema types")
 
-            # Get all field specs to validate
-            all_field_specs = []
+            # Use dictionary to store field specs with column as key
+            all_field_specs = {}
+            
+            # Track columns for each table type
+            table_columns = {"loan": set(), "property": set()}
+            
             for config in validation_configs:
                 if not isinstance(config, str) or config not in ["loan", "property"]:
                     raise ValueError("Each validation config must be either 'loan' or 'property'")
+                    
                 schema = self.loan_schema if config == "loan" else self.property_schema
-                for col in schema["columns"]:
-                    all_field_specs.append({
-                    "column": col,
-                    "table": config,
-                    "schema": schema["columns"][col]
-                })
+                for col, new_schema in schema["columns"].items():
+                    if col in all_field_specs:
+                        # Assert schema matches for shared columns
+                        if all_field_specs[col]["schema"] != new_schema:
+                            raise ValueError(
+                                f"Schema mismatch for column {col} between {all_field_specs[col]['table']} "
+                                f"and {config} tables. Schemas must be identical for shared columns."
+                            )
+                        # Update table type to "both"
+                        all_field_specs[col]["table"] = "both"
+                        # Add column to both table types
+                        table_columns["loan"].add(col)
+                        table_columns["property"].add(col)
+                    else:
+                        all_field_specs[col] = {
+                            "table": config,
+                            "schema": new_schema
+                        }
+                        # Add column to its table type
+                        table_columns[config].add(col)
 
-            return self._validate_field_specs(df, all_field_specs)
+            # Validate the full DataFrame first
+            validated_df = self._validate_field_specs(df, all_field_specs)
+            
+            # Split and select columns for each table type
+            result = {}
+            for config in validation_configs:
+                # Get relevant columns for this table (including _validation_type)
+                columns = list(table_columns[config]) + ["_validation_type"]
+                
+                # Filter rows for this table type and select only relevant columns
+                table_df = validated_df.filter(F.col("_validation_type") == config).select(*columns)
+                result[config] = table_df
+            
+            return result
 
         except Exception as e:
             logger.error(f"Error during DataFrame validation: {str(e)}")
@@ -219,7 +254,7 @@ class SchemaManager:
     def _validate_field_specs(self, df, field_specs):
         """Validate DataFrame against field specifications."""
         # Check for columns in DataFrame that aren't in the schema
-        schema_columns = set([field["column"] for field in field_specs])
+        schema_columns = set(field_specs)
         unknown_columns = {col for col in df.columns if col != "_validation_type" and col not in schema_columns}
         if unknown_columns:
             raise ValueError(f"Found columns in DataFrame that are not defined in schema: {unknown_columns}")
@@ -230,8 +265,7 @@ class SchemaManager:
         # First pass: Validate all fields that exist in the DataFrame
         validation_exprs = []
         
-        for field_spec in field_specs:
-            field_name = field_spec["column"]
+        for field_name, field_spec in field_specs.items():
             if field_name not in columns_to_validate:
                 continue
             validation_table = field_spec["table"]
@@ -251,13 +285,21 @@ class SchemaManager:
                 )
                 # Check for empty strings in non-nullable fields
                 if not nullable:
-                    validation_exprs.append(
-                        F.when(
-                            (F.col("_validation_type") == validation_table) &
-                            (F.trim(F.col(field_name)) == ""),
-                            F.lit(f"empty string values in {field_name}")
+                    if validation_table == "both":
+                        validation_exprs.append(
+                            F.when(
+                                (F.trim(F.col(field_name)) == ""),
+                                F.lit(f"empty string values in {field_name}")
+                            )
                         )
-                    )
+                    else:
+                        validation_exprs.append(
+                            F.when(
+                                (F.col("_validation_type") == validation_table) &
+                                (F.trim(F.col(field_name)) == ""),
+                                F.lit(f"empty string values in {field_name}")
+                            )
+                        )
             
             # Date validations
             elif isinstance(spark_type, DateType):
@@ -321,13 +363,21 @@ class SchemaManager:
             
             # Nullable constraint
             if not nullable:
-                validation_exprs.append(
-                    F.when(
-                        (F.col("_validation_type") == validation_table) &
-                        (F.col(field_name).isNull()),
-                        F.lit(f"null values in non-nullable field {field_name}")
+                if validation_table == "both":
+                    validation_exprs.append(
+                        F.when(
+                            (F.col(field_name).isNull()),
+                            F.lit(f"null values in non-nullable field {field_name}")
+                        )
                     )
-                )
+                else:
+                    validation_exprs.append(
+                        F.when(
+                            (F.col("_validation_type") == validation_table) &
+                            (F.col(field_name).isNull()),
+                            F.lit(f"null values in non-nullable field {field_name}")
+                        )
+                    )
         
         # Check for validation errors
         if validation_exprs:
@@ -347,8 +397,7 @@ class SchemaManager:
                 raise ValueError(f"Multiple validation errors found: {', '.join(sorted(errors))}")
         
         # Second pass: Apply transformations only to fields that exist
-        for field_spec in field_specs:
-            field_name = field_spec["column"]
+        for field_name, field_spec in field_specs.items():
             if field_name not in columns_to_validate:
                 continue
             spec = field_spec["schema"]

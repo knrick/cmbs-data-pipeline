@@ -17,14 +17,14 @@ from .logging_utils import setup_logger
 logger = setup_logger(__name__)
 
 class XMLProcessor:
-    def __init__(self, spark=None, output_dir="./processed_data"):
+    def __init__(self, spark=None, output_dir="./processed_data", partition_by_date=True):
         """Initialize XMLProcessor with optional Spark session and output directory."""
         logger.info("Initializing XMLProcessor")
         self.spark = spark or self._create_spark_session()
         self.schema_manager = SchemaManager()
         self.data_profiler = DataProfiler()
         self.output_dir = output_dir
-        
+        self.partition_by_date = partition_by_date
         # Create output directories
         logger.info(f"Creating output directories in {output_dir}")
         os.makedirs(output_dir, exist_ok=True)
@@ -337,12 +337,12 @@ class XMLProcessor:
                     combined_df = combined_df.unionByName(df, allowMissingColumns=True)
                 
                 # Validate all data in parallel
-                validated_df = self.schema_manager.validate_dataframe_schema(combined_df, validation_configs)
+                validated_dfs = self.schema_manager.validate_dataframe_schema(combined_df, validation_configs)
                 
                 # Split back into individual DataFrames
                 if properties_df is not None:
-                    properties_df = validated_df.filter(F.col("_validation_type") == "property").drop("_validation_type")
-                loans_df = validated_df.filter(F.col("_validation_type") == "loan").drop("_validation_type")
+                    properties_df = validated_dfs["property"]
+                loans_df = validated_dfs["loan"]
                 
                 # Use Spark's built-in parallelism for data quality checks
                 duplicates = self.data_profiler.check_duplicates(loans_df)
@@ -364,17 +364,23 @@ class XMLProcessor:
                 if loans_df is not None:
                     os.makedirs(loans_output_path, exist_ok=True)
                     
-                    logger.info(f"Saving {loans_df.count()} loan records for {trust_name}")
-                    loans_df.write \
-                        .mode("append") \
-                        .option("compression", "snappy") \
-                        .partitionBy("reportingPeriodEndDate") \
-                        .parquet(loans_output_path)
+                    logger.info(f"Saving {loans_df.count()} loan records with {len(loans_df.columns)} columns for {trust_name}")
+                    if self.partition_by_date:
+                        loans_df.write \
+                            .mode("append") \
+                            .option("compression", "snappy") \
+                            .partitionBy("reportingPeriodEndDate") \
+                            .parquet(loans_output_path)
+                    else:
+                        loans_df.write \
+                            .mode("append") \
+                            .option("compression", "snappy") \
+                            .parquet(loans_output_path)
                 
                 if properties_df is not None:
                     os.makedirs(properties_output_path, exist_ok=True)
                     
-                    logger.info(f"Saving {properties_df.count()} property records for {trust_name}")
+                    logger.info(f"Saving {properties_df.count()} property records with {len(properties_df.columns)} columns for {trust_name}")
                     properties_df.write \
                         .mode("append") \
                         .option("compression", "snappy") \

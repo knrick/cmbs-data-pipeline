@@ -12,8 +12,8 @@
         },
         "reportingPeriodEndDate": {
             "type": "date",
-            "nullable": true,
-            "description": "Reporting period end date"
+            "nullable": false,
+            "description": "End date of reporting period"
         },
         "company": {
             "type": "string",
