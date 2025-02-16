@@ -3,12 +3,16 @@
         "assetTypeNumber": {
             "type": "string",
             "nullable": true,
-            "description": "Asset type identifier"
+            "description": "Asset type identifier",
+            "size": 18,
+            "allow_control_chars": false
         },
         "assetNumber": {
             "type": "string",
             "nullable": false,
-            "description": "Unique identifier for the asset"
+            "description": "Unique identifier for the asset",
+            "size": 6,
+            "allow_control_chars": false
         },
         "reportingPeriodEndDate": {
             "type": "date",
@@ -18,52 +22,72 @@
         "company": {
             "type": "string",
             "nullable": false,
-            "description": "Company name"
+            "description": "Company name",
+            "size": 55,
+            "allow_control_chars": false
         },
         "trust": {
             "type": "string",
             "nullable": false,
-            "description": "Trust name"
+            "description": "Trust name",
+            "size": 65,
+            "allow_control_chars": false
         },
         "source_file": {
             "type": "string",
             "nullable": false,
-            "description": "Source file name"
+            "description": "Source file name",
+            "size": 208,
+            "allow_control_chars": false
         },
         "propertyName": {
             "type": "string",
             "nullable": true,
-            "description": "Name of the property"
+            "description": "Name of the property",
+            "size": 100,
+            "allow_control_chars": false
         },
         "propertyAddress": {
             "type": "string",
             "nullable": true,
-            "description": "Street address of the property"
+            "description": "Street address of the property",
+            "size": 200,
+            "allow_control_chars": false
         },
         "propertyCity": {
             "type": "string",
             "nullable": true,
-            "description": "City where the property is located"
+            "description": "City where the property is located",
+            "size": 50,
+            "allow_control_chars": false
         },
         "propertyState": {
             "type": "string",
             "nullable": true,
-            "description": "State where the property is located"
+            "description": "State where the property is located",
+            "size": 2,
+            "allow_control_chars": false
         },
         "propertyZip": {
             "type": "string",
             "nullable": true,
-            "description": "ZIP code of the property"
+            "description": "ZIP code of the property",
+            "size": 10,
+            "allow_control_chars": false
         },
         "propertyCounty": {
             "type": "string",
             "nullable": true,
-            "description": "County where the property is located"
+            "description": "County where the property is located",
+            "size": 50,
+            "allow_control_chars": false
         },
         "propertyTypeCode": {
             "type": "string",
             "nullable": true,
-            "description": "Code indicating the type of property (e.g., RT for retail)"
+            "description": "Code indicating the type of property (e.g., RT for retail)",
+            "size": 10,
+            "allow_control_chars": false
         },
         "unitsBedsRoomsNumber": {
             "type": "UInt16",
@@ -96,14 +120,18 @@
             "description": "Year of the most recent renovation"
         },
         "valuationSecuritizationAmount": {
-            "type": "Decimal(15,2)",
+            "type": "number",
+            "whole": 13,
+            "decimal": 2,
             "nullable": true,
             "description": "Property valuation amount at securitization"
         },
         "valuationSourceSecuritizationCode": {
             "type": "string",
             "nullable": true,
-            "description": "Source code for the securitization valuation"
+            "description": "Source code for the securitization valuation",
+            "size": 10,
+            "allow_control_chars": false
         },
         "valuationSecuritizationDate": {
             "type": "date",
@@ -111,7 +139,9 @@
             "description": "Date of the securitization valuation"
         },
         "mostRecentValuationAmount": {
-            "type": "Decimal(15,2)",
+            "type": "number",
+            "whole": 13,
+            "decimal": 2,
             "nullable": true,
             "description": "Most recent property valuation amount"
         },
@@ -121,14 +151,18 @@
             "description": "Date of the most recent valuation"
         },
         "physicalOccupancySecuritizationPercentage": {
-            "type": "Decimal(5,2)",
+            "type": "number",
+            "whole": 3,
+            "decimal": 2,
             "nullable": true,
             "description": "Physical occupancy percentage at securitization"
         },
         "propertyStatusCode": {
             "type": "string",
             "nullable": true,
-            "description": "Code indicating the current status of the property"
+            "description": "Code indicating the current status of the property",
+            "size": 10,
+            "allow_control_chars": false
         },
         "defeasanceOptionStartDate": {
             "type": "date",
@@ -138,15 +172,21 @@
         "DefeasedStatusCode": {
             "type": "string",
             "nullable": true,
-            "description": "Current defeasance status code"
+            "description": "Current defeasance status code",
+            "size": 10,
+            "allow_control_chars": false
         },
         "largestTenant": {
             "type": "string",
             "nullable": true,
-            "description": "Name of the largest tenant"
+            "description": "Name of the largest tenant",
+            "size": 100,
+            "allow_control_chars": false
         },
         "squareFeetLargestTenantNumber": {
-            "type": "Decimal(15,2)",
+            "type": "number",
+            "whole": 13,
+            "decimal": 2,
             "nullable": true,
             "description": "Square footage occupied by the largest tenant"
         },
@@ -158,10 +198,14 @@
         "secondLargestTenant": {
             "type": "string",
             "nullable": true,
-            "description": "Name of the second largest tenant"
+            "description": "Name of the second largest tenant",
+            "size": 100,
+            "allow_control_chars": false
         },
         "squareFeetSecondLargestTenantNumber": {
-            "type": "Decimal(15,2)",
+            "type": "number",
+            "whole": 13,
+            "decimal": 2,
             "nullable": true,
             "description": "Square footage occupied by the second largest tenant"
         },
@@ -173,10 +217,14 @@
         "thirdLargestTenant": {
             "type": "string",
             "nullable": true,
-            "description": "Name of the third largest tenant"
+            "description": "Name of the third largest tenant",
+            "size": 100,
+            "allow_control_chars": false
         },
         "squareFeetThirdLargestTenantNumber": {
-            "type": "Decimal(15,2)",
+            "type": "number",
+            "whole": 13,
+            "decimal": 2,
             "nullable": true,
             "description": "Square footage occupied by the third largest tenant"
         },
@@ -191,49 +239,64 @@
             "description": "Date of the financial information at securitization"
         },
         "revenueSecuritizationAmount": {
-            "type": "Decimal(15,2)",
+            "type": "number",
+            "whole": 13,
+            "decimal": 2,
             "nullable": true,
             "description": "Revenue amount at securitization"
         },
         "operatingExpensesSecuritizationAmount": {
-            "type": "Decimal(15,2)",
+            "type": "number",
+            "whole": 13,
+            "decimal": 2,
             "nullable": true,
             "description": "Operating expenses amount at securitization"
         },
         "netOperatingIncomeSecuritizationAmount": {
-            "type": "Decimal(15,2)",
+            "type": "number",
+            "whole": 13,
+            "decimal": 2,
             "nullable": true,
             "description": "Net operating income at securitization"
         },
         "netCashFlowFlowSecuritizationAmount": {
-            "type": "Decimal(15,2)",
+            "type": "number",
+            "whole": 13,
+            "decimal": 2,
             "nullable": true,
             "description": "Net cash flow at securitization"
         },
         "netOperatingIncomeNetCashFlowSecuritizationCode": {
             "type": "string",
             "nullable": true,
-            "description": "Code for NOI/NCF calculation method at securitization"
+            "description": "Code for NOI/NCF calculation method at securitization",
+            "size": 10
         },
         "netOperatingIncomeNetCashFlowCode": {
             "type": "string",
             "nullable": true,
-            "description": "Current code for NOI/NCF calculation method"
+            "description": "Current code for NOI/NCF calculation method",
+            "size": 10
         },
         "debtServiceCoverageNetOperatingIncomeSecuritizationPercentage": {
-            "type": "Decimal(10,2)",
+            "type": "number",
+            "whole": 8,
+            "decimal": 2,
             "nullable": true,
             "description": "DSCR based on NOI at securitization"
         },
         "debtServiceCoverageNetCashFlowSecuritizationPercentage": {
-            "type": "Decimal(10,2)",
+            "type": "number",
+            "whole": 8,
+            "decimal": 2,
             "nullable": true,
             "description": "DSCR based on NCF at securitization"
         },
         "debtServiceCoverageSecuritizationCode": {
             "type": "string",
             "nullable": true,
-            "description": "Code indicating the DSCR calculation method at securitization"
+            "description": "Code indicating the DSCR calculation method at securitization",
+            "size": 10
         },
         "mostRecentAnnualLeaseRolloverReviewDate": {
             "type": "date",
@@ -246,22 +309,29 @@
             "description": "Asset added indicator"
         },
         "mostRecentDebtServiceAmount": {
-            "type": "Decimal(10,2)",
+            "type": "number",
+            "whole": 8,
+            "decimal": 2,
             "nullable": true,
             "description": "Most recent debt service amount"
         },
         "mostRecentDebtServiceCoverageCode": {
             "type": "string",
             "nullable": true,
-            "description": "Most recent debt service coverage code"
+            "description": "Most recent debt service coverage code",
+            "size": 10
         },
         "mostRecentDebtServiceCoverageNetCashFlowpercentage": {
-            "type": "Decimal(6,5)",
+            "type": "number",
+            "whole": 1,
+            "decimal": 5,
             "nullable": true,
             "description": "Most recent debt service coverage net cash flow percentage"
         },
         "mostRecentDebtServiceCoverageNetOperatingIncomePercentage": {
-            "type": "Decimal(6,5)",
+            "type": "number",
+            "whole": 1,
+            "decimal": 5,
             "nullable": true,
             "description": "Most recent debt service coverage net operating income percentage"
         },
@@ -276,32 +346,43 @@
             "description": "Most recent financials end date"
         },
         "mostRecentNetCashFlowAmount": {
-            "type": "Decimal(10,2)",
+            "type": "number",
+            "whole": 8,
+            "decimal": 2,
             "nullable": true,
             "description": "Most recent net cash flow amount"
         },
         "mostRecentNetOperatingIncomeAmount": {
-            "type": "Decimal(10,2)",
+            "type": "number",
+            "whole": 8,
+            "decimal": 2,
             "nullable": true,
             "description": "Most recent net operating income amount"
         },
         "mostRecentPhysicalOccupancyPercentage": {
-            "type": "Decimal(6,5)",
+            "type": "number",
+            "whole": 1,
+            "decimal": 5,
             "nullable": true,
             "description": "Most recent physical occupancy percentage"
         },
         "mostRecentRevenueAmount": {
-            "type": "Decimal(11,2)",
+            "type": "number",
+            "whole": 9,
+            "decimal": 2,
             "nullable": true,
             "description": "Most recent revenue amount"
         },
         "mostRecentValuationSourceCode": {
             "type": "string",
             "nullable": true,
-            "description": "Most recent valuation source code"
+            "description": "Most recent valuation source code",
+            "size": 10
         },
         "operatingExpensesAmount": {
-            "type": "Decimal(10,2)",
+            "type": "number",
+            "whole": 8,
+            "decimal": 2,
             "nullable": true,
             "description": "Operating expenses amount"
         },

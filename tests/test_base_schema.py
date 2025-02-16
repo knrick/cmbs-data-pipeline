@@ -15,7 +15,8 @@ def loan_schema_path(temp_dir):
             "assetNumber": {
                 "type": "string",
                 "nullable": False,
-                "description": "Unique identifier for the asset"
+                "description": "Unique identifier for the asset",
+                "size": 6
             },
             "reportingPeriodEndDate": {
                 "type": "date",
@@ -23,7 +24,9 @@ def loan_schema_path(temp_dir):
                 "description": "End date of reporting period"
             },
             "originalLoanAmount": {
-                "type": "Decimal(11,2)",
+                "type": "number",
+                "whole": 9,
+                "decimal": 2,
                 "nullable": True,
                 "description": "Original loan amount"
             }
@@ -48,7 +51,8 @@ def property_schema_path(temp_dir):
             "propertyId": {
                 "type": "string",
                 "nullable": False,
-                "description": "Unique identifier for the property"
+                "description": "Unique identifier for the property",
+                "size": 6
             },
             "valuationDate": {
                 "type": "date",
@@ -56,7 +60,9 @@ def property_schema_path(temp_dir):
                 "description": "Date of property valuation"
             },
             "propertyValue": {
-                "type": "Decimal(15,2)",
+                "type": "number",
+                "whole": 13,
+                "decimal": 2,
                 "nullable": True,
                 "description": "Property valuation amount"
             }
@@ -111,13 +117,13 @@ def test_schema_data_types(loan_schema_path, property_schema_path):
     loan_cols = loan_schema["columns"]
     assert loan_cols["assetNumber"]["type"] == "string"
     assert loan_cols["reportingPeriodEndDate"]["type"] == "date"
-    assert loan_cols["originalLoanAmount"]["type"] == "Decimal(11,2)"
+    assert loan_cols["originalLoanAmount"]["type"] == "number"
     
     # Test property schema types
     prop_cols = property_schema["columns"]
     assert prop_cols["propertyId"]["type"] == "string"
     assert prop_cols["valuationDate"]["type"] == "date"
-    assert prop_cols["propertyValue"]["type"] == "Decimal(15,2)"
+    assert prop_cols["propertyValue"]["type"] == "number"
 
 def test_schema_versioning(temp_dir):
     """Test schema versioning functionality."""
@@ -263,5 +269,5 @@ def test_schema_validation(loan_schema_path, property_schema_path):
     assert property_schema["columns"]["propertyValue"]["nullable"]
     
     # Test decimal precision and scale
-    assert "Decimal(11,2)" in loan_schema["columns"]["originalLoanAmount"]["type"]
-    assert "Decimal(15,2)" in property_schema["columns"]["propertyValue"]["type"] 
+    assert "number" in loan_schema["columns"]["originalLoanAmount"]["type"]
+    assert "number" in property_schema["columns"]["propertyValue"]["type"] 

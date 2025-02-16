@@ -221,16 +221,13 @@ class SchemaManager:
                             )
                         # Update table type to "both"
                         all_field_specs[col]["table"] = "both"
-                        # Add column to both table types
-                        table_columns["loan"].add(col)
-                        table_columns["property"].add(col)
                     else:
                         all_field_specs[col] = {
                             "table": config,
                             "schema": new_schema
                         }
-                        # Add column to its table type
-                        table_columns[config].add(col)
+                    # Add column to its table type
+                    table_columns[config].add(col)
 
             # Validate the full DataFrame first
             validated_df = self._validate_field_specs(df, all_field_specs)
@@ -239,13 +236,13 @@ class SchemaManager:
             result = {}
             for config in validation_configs:
                 # Get relevant columns for this table (including _validation_type)
-                columns = list(table_columns[config]) + ["_validation_type"]
+                columns = list(table_columns[config])
                 
                 # Filter rows for this table type and select only relevant columns
                 table_df = validated_df.filter(F.col("_validation_type") == config).select(*columns)
                 result[config] = table_df
             
-            return result
+            return result[config] if len(result) == 1 else result
 
         except Exception as e:
             logger.error(f"Error during DataFrame validation: {str(e)}")
@@ -264,9 +261,12 @@ class SchemaManager:
         
         # First pass: Validate all fields that exist in the DataFrame
         validation_exprs = []
+        errors = set()
         
         for field_name, field_spec in field_specs.items():
             if field_name not in columns_to_validate:
+                if not field_spec["schema"]["nullable"]: # if the field is not nullable, it must be in the df
+                    errors.add(f"Non-nullable field {field_name} is missing in DataFrame")
                 continue
             validation_table = field_spec["table"]
             spec = field_spec["schema"]
@@ -274,21 +274,30 @@ class SchemaManager:
             nullable = spec.get("nullable", True)
             
             # Get Spark type for casting
-            spark_type = self._get_spark_type(field_type)
+            spark_type = self._get_spark_type(spec)
             
             # String validations
             if isinstance(spark_type, StringType):
-                # Check for control characters
-                validation_exprs.append(
-                    F.when(F.col(field_name).rlike("[\x00-\x1F\x7F]"), 
-                          F.lit(f"invalid string values in {field_name}"))
-                )
+                size = spec.get("size")
+                if size:
+                    validation_exprs.append(
+                        F.when(
+                            (F.length(F.col(field_name)) > size),
+                            F.lit(f"string length exceeds {size} in {field_name}")
+                        )
+                    )
+                # Check for control characters only if not explicitly allowed
+                if not spec.get("allow_control_chars", False):
+                    validation_exprs.append(
+                        F.when(F.col(field_name).rlike("[\x00-\x1F\x7F]"), 
+                              F.lit(f"invalid control characters in {field_name}"))
+                    )
                 # Check for empty strings in non-nullable fields
                 if not nullable:
                     if validation_table == "both":
                         validation_exprs.append(
                             F.when(
-                                (F.trim(F.col(field_name)) == ""),
+                                F.trim(F.col(field_name)) == "",
                                 F.lit(f"empty string values in {field_name}")
                             )
                         )
@@ -300,16 +309,36 @@ class SchemaManager:
                                 F.lit(f"empty string values in {field_name}")
                             )
                         )
+                
+            # Number validations
+            elif isinstance(spark_type, DecimalType):
+                whole = spec.get("whole", 0)
+                decimal = spec.get("decimal", 0)
+                
+                # Construct regex pattern for numeric validation
+                if decimal > 0:
+                    # Pattern for numbers with decimals
+                    pattern = f"^-?\\d{{1,{whole}}}(\\.\\d{{1,{decimal}}})?$"
+                else:
+                    # Pattern for whole numbers
+                    pattern = f"^-?\\d{{1,{whole}}}$"
+                    
+                validation_exprs.append(
+                    F.when(
+                        F.col(field_name).isNotNull() & 
+                        ~F.col(field_name).cast("string").rlike(pattern),
+                        F.lit(f"numeric value exceeds {whole}.{decimal} format in {field_name}")
+                    )
+                )
             
             # Date validations
             elif isinstance(spark_type, DateType):
-                # First check for valid date
                 validation_exprs.append(
                     F.when(
-                        ~F.col(field_name).isNull() & 
-                        F.col(field_name).rlike('^(\\d{2}-\\d{2}-\\d{4}|\\d{4}-\\d{2}-\\d{2})$') &
-                        ~F.to_date(F.col(field_name), "MM-dd-yyyy").isNotNull() &
-                        ~F.to_date(F.col(field_name), "yyyy-MM-dd").isNotNull(),
+                        F.col(field_name).isNotNull() & ~(
+                            F.col(field_name).rlike(r"^(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])-\d{4}$") |
+                            F.col(field_name).rlike(r"^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$")
+                        ),
                         F.lit(f"invalid date values in {field_name}")
                     )
                 )
@@ -318,55 +347,51 @@ class SchemaManager:
             elif field_type == "UInt8":
                 validation_exprs.append(
                     F.when(
-                        ~F.col(field_name).isNull() & 
-                        ((F.col(field_name).cast("double") < 0) | 
-                         (F.col(field_name).cast("double") > 255)),
+                        F.col(field_name).isNotNull() & 
+                        (
+                            F.col(field_name).cast("double").isNull() |  # unparseable values
+                            (F.col(field_name).cast("double") < 0) | 
+                            (F.col(field_name).cast("double") > 255) |
+                            (F.col(field_name).cast("double") != F.ceil(F.col(field_name).cast("double")))  # non-integer values
+                        ),
                         F.lit(f"outside UInt8 range in {field_name}")
                     )
                 )
             elif field_type == "UInt16":
                 validation_exprs.append(
                     F.when(
-                        ~F.col(field_name).isNull() & 
-                        ((F.col(field_name).cast("double") < 0) | 
-                         (F.col(field_name).cast("double") > 65535)),
+                        F.col(field_name).isNotNull() & 
+                        (
+                            F.col(field_name).cast("double").isNull() |  # unparseable values
+                            (F.col(field_name).cast("double") < 0) | 
+                            (F.col(field_name).cast("double") > 65535) |
+                            (F.col(field_name).cast("double") != F.ceil(F.col(field_name).cast("double")))  # non-integer values
+                        ),
                         F.lit(f"outside UInt16 range in {field_name}")
                     )
                 )
             
             # Floating point validations
             elif isinstance(spark_type, (FloatType, DoubleType)):
-                max_val = float("1.8e+308") if isinstance(spark_type, DoubleType) else float("3.4e+38")
+                # Define max value based on type
+                max_val = float("1.7976931348623157e+308") if isinstance(spark_type, DoubleType) else float("3.4028235e+38")
+                
                 validation_exprs.append(
                     F.when(
-                        ~F.col(field_name).isNull() & 
-                        (F.abs(F.col(field_name).cast("double")) > max_val),
+                        F.col(field_name).isNotNull() & 
+                        (
+                            F.col(field_name).cast("double").isNull() |  # unparseable values
+                            (F.abs(F.col(field_name).cast("double")) > max_val)
+                        ),
                         F.lit(f"invalid floating-point values in {field_name}")
                     )
                 )
-            
-            # Decimal validations
-            elif isinstance(spark_type, DecimalType):
-                precision = spark_type.precision
-                scale = spark_type.scale
-                # Check if string matches decimal format:
-                # - Integers without decimal point
-                # - Numbers with decimal point and 0 to scale digits after
-                decimal_regex = f"^-?\\d{{1,{precision-scale}}}(\\.\\d{{0,{scale}}})?$"
-                validation_exprs.append(
-                    F.when(
-                        ~F.col(field_name).isNull() & 
-                        ~F.col(field_name).rlike(decimal_regex),
-                        F.lit(f"invalid decimal value in {field_name}")
-                    )
-                )
-            
             # Nullable constraint
             if not nullable:
                 if validation_table == "both":
                     validation_exprs.append(
                         F.when(
-                            (F.col(field_name).isNull()),
+                            F.col(field_name).isNull(),
                             F.lit(f"null values in non-nullable field {field_name}")
                         )
                     )
@@ -374,7 +399,7 @@ class SchemaManager:
                     validation_exprs.append(
                         F.when(
                             (F.col("_validation_type") == validation_table) &
-                            (F.col(field_name).isNull()),
+                            F.col(field_name).isNull(),
                             F.lit(f"null values in non-nullable field {field_name}")
                         )
                     )
@@ -389,20 +414,18 @@ class SchemaManager:
             error_df = df.select(error_struct)
             
             # Collect all non-null error messages from all rows
-            errors = set()  # Use set to avoid duplicates
             for row in error_df.collect():
                 errors.update(value for value in row[0].asDict().values() if value is not None)
             
             if errors:
                 raise ValueError(f"Multiple validation errors found: {', '.join(sorted(errors))}")
         
-        # Second pass: Apply transformations only to fields that exist
+        # Second pass: Apply transformations
         for field_name, field_spec in field_specs.items():
             if field_name not in columns_to_validate:
                 continue
             spec = field_spec["schema"]
-            field_type = spec["type"]
-            spark_type = self._get_spark_type(field_type)
+            spark_type = self._get_spark_type(spec)
             
             if isinstance(spark_type, BooleanType):
                 df = df.withColumn(field_name, 
@@ -416,9 +439,18 @@ class SchemaManager:
                         F.to_date(F.col(field_name), "MM-dd-yyyy"),
                         F.to_date(F.col(field_name), "yyyy-MM-dd")
                     ))
-            
+            elif isinstance(spark_type, StringType):
+                # First remove control characters
+                df = df.withColumn(field_name, 
+                    F.regexp_replace(F.col(field_name), "[\x00-\x1F\x7F]", ""))
+                # Then trim whitespace
+                df = df.withColumn(field_name, F.trim(F.col(field_name)))
             else:
                 df = df.withColumn(field_name, F.col(field_name).cast(spark_type))
+        
+        missing_columns = set(schema_columns) - set(df.columns)
+        if missing_columns:
+            df = df.select("*", *[F.lit(None).alias(col) for col in missing_columns])
         
         logger.info("DataFrame validation completed successfully")
         return df
@@ -430,23 +462,26 @@ class SchemaManager:
             self._decimal_type_cache[key] = DecimalType(precision, scale)
         return self._decimal_type_cache[key]
     
-    def _get_spark_type(self, type_spec):
-        """Convert type specification to Spark type."""
-        
-        # Handle decimal types
-        decimal_match = re.match(r"^Decimal\((\d+),(\d+)\)$", type_spec)
-        if decimal_match:
-            precision, scale = map(int, decimal_match.groups())
-            return self._get_decimal_type(precision, scale)
+    def _get_spark_type(self, field_spec):
+        """Convert field specification to Spark type."""
+        if isinstance(field_spec, dict):
+            type_name = field_spec["type"]
+        else:
+            type_name = field_spec
             
-        # Handle type strings that include parentheses (e.g., "StringType()")
-        type_name = type_spec.split("(")[0] if "(" in type_spec else type_spec
-        
+        # Handle numeric types with whole/decimal specification
+        if type_name == "number":
+            if isinstance(field_spec, dict) and "whole" in field_spec and "decimal" in field_spec:
+                return self._get_decimal_type(field_spec["whole"]+field_spec["decimal"], field_spec["decimal"])
+            else:
+                logger.error("Number type specified without whole/decimal values")
+                raise ValueError("Number type requires whole and decimal specifications")
+            
         if type_name in self.type_mapping:
             return self.type_mapping[type_name]
             
-        logger.error(f"Unsupported type specification: {type_spec}")
-        raise ValueError(f"Unsupported type specification: {type_spec}")
+        logger.error(f"Unsupported type specification: {type_name}")
+        raise ValueError(f"Unsupported type specification: {type_name}")
 
     def get_common_field_types(self):
         """Get common field types across all schemas."""
