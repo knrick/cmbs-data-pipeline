@@ -2,9 +2,12 @@ import os
 import re
 import json
 from typing import Dict, Any, List
+from datetime import datetime
+from functools import reduce
 import logging
 from pathlib import Path
 import platform
+import pandas as pd
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from pyspark.sql import SparkSession, DataFrame
@@ -168,21 +171,22 @@ def schema_to_sql(schema: Dict[str, Any], table_name: str, add_drop: bool = Fals
     return '\n'.join(sql_parts)
 
 class PostgresConnector:
-    def __init__(self, dbname='cmbs_data', user='postgres', password='postgres', host='localhost', port=5432):
-        """Initialize database connection parameters."""
+    def __init__(self, dbname=None, user=None, password=None, host=None, port=None):
+        """Initialize database connection parameters from environment variables or arguments."""
+        # Load from environment variables with fallback to arguments
         self.params = {
-            'dbname': dbname,
-            'user': user,
-            'password': password,
-            'host': host,
-            'port': port
+            'dbname': dbname or os.getenv('POSTGRES_DB', 'cmbs_data'),
+            'user': user or os.getenv('POSTGRES_USER', 'postgres'),
+            'password': password or os.getenv('POSTGRES_PASSWORD', 'postgres'),
+            'host': host or os.getenv('POSTGRES_HOST', 'localhost'),
+            'port': port or os.getenv('POSTGRES_PORT', 5432)
         }
         
         # JDBC URL for Spark
-        self.jdbc_url = f"jdbc:postgresql://{host}:{port}/{dbname}"
+        self.jdbc_url = f"jdbc:postgresql://{self.params['host']}:{self.params['port']}/{self.params['dbname']}"
         self.connection_properties = {
-            "user": user,
-            "password": password,
+            "user": self.params['user'],
+            "password": self.params['password'],
             "driver": "org.postgresql.Driver"
         }
         
@@ -222,7 +226,7 @@ class PostgresConnector:
         WHERE table_name = '{table_name}'
         ORDER BY ordinal_position;
         """
-        return self.execute_query_dict(query)
+        return pd.DataFrame(self.execute_query_dict(query))
     
     def get_row_count(self, table_name: str) -> int:
         """Get the number of rows in a table."""
@@ -233,126 +237,30 @@ class PostgresConnector:
                 return cur.fetchone()[0]
         finally:
             conn.close()
-
-class ParquetLoader:
-    def __init__(self, spark=None, data_dir="./processed_data/parquet"):
-        """Initialize the loader with Spark session and data directory path."""
-        self.spark = spark or self._create_spark_session()
-        self.data_dir = data_dir
-        self.db = PostgresConnector()
-        self.is_windows = platform.system() == 'Windows'
-
-    def _create_spark_session(self):
-        """Create a local Spark session with proper configurations."""
-        logger.info("Creating new Spark session")
-        import sys
-        python_path = sys.executable
-        
-        builder = SparkSession.builder \
-            .appName("CMBS-Parquet-Loader") \
-            .master("local[*]") \
-            .config("spark.driver.memory", "4g") \
-            .config("spark.sql.shuffle.partitions", "8") \
-            .config("spark.default.parallelism", "8") \
-            .config("spark.sql.execution.arrow.enabled", "true") \
-            .config("spark.driver.extraJavaOptions", "-XX:+UseG1GC") \
-            .config("spark.pyspark.python", python_path) \
-            .config("spark.pyspark.driver.python", python_path) \
-            .config("spark.jars", "utils/postgresql-42.7.5.jar")
-        
-        # Windows-specific configurations
-        if sys.platform.startswith('win'):
-            logger.info("Applying Windows-specific Spark configurations")
-            builder = builder \
-                .config("spark.sql.warehouse.dir", "file:///" + os.path.abspath("spark-warehouse")) \
-                .config("spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version", "2") \
-                .config("spark.hadoop.fs.defaultFS", "file:///") \
-                .config("spark.hadoop.fs.permissions.umask-mode", "000")
-        
-        return builder.getOrCreate()
-
-    def find_parquet_files(self) -> Dict[str, List[Dict[str, Any]]]:
-        """Find all parquet files for loans and properties."""
-        parquet_files = {
-            'loans': [],
-            'properties': []
-        }
-        
-        # Walk through company and trust directories
-        for company_name in os.listdir(self.data_dir):
-            company_dir = os.path.join(self.data_dir, company_name)
-            if not os.path.isdir(company_dir):
-                continue
-            
-            for trust_name in os.listdir(company_dir):
-                trust_dir = os.path.join(company_dir, trust_name)
-                if not os.path.isdir(trust_dir):
-                    continue
-                
-                logger.info(f"Processing {company_name} - {trust_name}")
-                
-                # Handle loans (partitioned by date)
-                loans_dir = os.path.join(trust_dir, 'loans')
-                if os.path.exists(loans_dir):
-                    # Check for SUCCESS file
-                    if not os.path.exists(os.path.join(loans_dir, '_SUCCESS')):
-                        logger.warning(f"No SUCCESS file found in {loans_dir}")
-                        continue
-                    
-                    parquet_files['loans'].append({
-                        'path': loans_dir,
-                        'company': company_name,
-                        'trust': trust_name
-                    })
-                
-                # Handle properties (not partitioned)
-                properties_dir = os.path.join(trust_dir, 'properties')
-                if os.path.exists(properties_dir):
-                    # Check for SUCCESS file
-                    if not os.path.exists(os.path.join(properties_dir, '_SUCCESS')):
-                        logger.warning(f"No SUCCESS file found in {properties_dir}")
-                        continue
-                    
-                    parquet_files['properties'].append({
-                        'path': properties_dir,
-                        'company': company_name,
-                        'trust': trust_name
-                    })
-                    
-        return parquet_files
-
-    def get_column_mapping(self, df: DataFrame, table_name: str) -> Dict[str, str]:
-        """Create a mapping between Spark DataFrame columns and PostgreSQL columns."""
-        # Get PostgreSQL table columns
-        table_info = self.db.get_table_info(table_name)
-        pg_columns = [col['column_name'] for col in table_info]
-        
-        # Create mapping dictionary
+    
+    def get_column_mapping(self, df: DataFrame, schema: Dict[str, Any]) -> Dict[str, str]:
+        """Create a mapping between DataFrame columns and PostgreSQL columns based on schema."""
         column_map = {}
-        unmapped_pg_cols = []
         unmapped_df_cols = []
+        
+        # Get schema columns
+        schema_columns = {col_name: col_def for col_name, col_def in schema['columns'].items()}
         
         # First, try exact matches (case-insensitive)
         for df_col in df.columns:
-            pg_col = df_col.lower()
-            if pg_col in pg_columns:
-                column_map[df_col] = pg_col
-                pg_columns.remove(pg_col)
-        
-        # Then try standardized names
-        remaining_df_cols = [col for col in df.columns if col not in column_map]
-        for df_col in remaining_df_cols:
+            if df_col.lower() in [col.lower() for col in schema_columns.keys()]:
+                column_map[df_col] = standardize_column_name(df_col)
+                continue
+            
+            # Try standardized name
             std_name = standardize_column_name(df_col)
-            if std_name in pg_columns:
+            if std_name in [standardize_column_name(col) for col in schema_columns.keys()]:
                 column_map[df_col] = std_name
-                pg_columns.remove(std_name)
             else:
                 unmapped_df_cols.append(df_col)
         
-        unmapped_pg_cols = pg_columns
-        
         # Log mapping results
-        logger.info(f"\nColumn mapping for {table_name}:")
+        logger.info(f"\nColumn mapping results:")
         logger.info("Mapped columns:")
         for df_col, pg_col in sorted(column_map.items()):
             logger.info(f"  {df_col} -> {pg_col}")
@@ -362,137 +270,89 @@ class ParquetLoader:
             for col in sorted(unmapped_df_cols):
                 logger.warning(f"  {col}")
         
-        if unmapped_pg_cols:
-            logger.warning("Unmapped PostgreSQL columns:")
-            for col in sorted(unmapped_pg_cols):
-                logger.warning(f"  {col}")
-        
         return column_map
-    
-    def standardize_dataframe(self, df: DataFrame, table_name: str) -> DataFrame:
-        """Standardize Spark DataFrame to match PostgreSQL schema."""
-        # Get column mapping
-        column_map = self.get_column_mapping(df, table_name)
-        
-        # Rename columns
-        for old_col, new_col in column_map.items():
-            df = df.withColumnRenamed(old_col, new_col)
-        
-        # Get PostgreSQL table columns
-        table_info = self.db.get_table_info(table_name)
-        pg_columns = [col['column_name'] for col in table_info]
-        
-        # Add missing columns with NULL values
-        for col in pg_columns:
-            if col not in df.columns:
-                df = df.withColumn(col, lit(None))
-        
-        # Select columns in the correct order
-        return df.select(pg_columns)
-    
-    def get_dataframes(self) -> Dict[str, DataFrame]:
-        """Read parquet files and return Spark DataFrames for each table."""
-        parquet_files = self.find_parquet_files()
-        dataframes = {}
-        
-        for table_name, file_infos in parquet_files.items():
-            if not file_infos:
-                logger.warning(f"No parquet files found for {table_name}")
-                continue
-                
-            logger.info(f"Processing {len(file_infos)} directories for {table_name}")
-            
-            # List to store DataFrames for each trust
-            dfs = []
-            
-            for file_info in file_infos:
-                try:
-                    path = file_info['path']
-                    logger.info(f"Reading from {path}")
-                    
-                    # Read parquet data
-                    df = self.spark.read.parquet(path)
-                    logger.info(f"Read {df.count()} rows with columns: {df.columns}")
-                    
-                    # Add company and trust if not present
-                    if 'company' not in df.columns:
-                        df = df.withColumn('company', lit(file_info['company']))
-                    if 'trust' not in df.columns:
-                        df = df.withColumn('trust', lit(file_info['trust']))
-                    
-                    dfs.append(df)
-                    
-                except Exception as e:
-                    logger.error(f"Error processing {path}: {str(e)}")
-            
-            if dfs:
-                # Combine all DataFrames for this table
-                combined_df = dfs[0]
-                for df in dfs[1:]:
-                    combined_df = combined_df.unionByName(df)
-                logger.info(f"Combined DataFrame has {combined_df.count()} rows")
-                
-                # Standardize the combined DataFrame
-                standardized_df = self.standardize_dataframe(combined_df, table_name)
-                dataframes[table_name] = standardized_df
-                
-        return dataframes
-    
-    def load_dataframes_to_postgres(self, dataframes: Dict[str, DataFrame]):
-        """Load Spark DataFrames into PostgreSQL tables."""
-        for table_name, df in dataframes.items():
-            try:
-                logger.info(f"Loading {df.count()} rows into {table_name}")
-                
-                # Write DataFrame to PostgreSQL
-                df.write \
-                    .jdbc(url=self.db.jdbc_url,
-                          table=table_name,
-                          mode="append",
-                          properties=self.db.connection_properties)
-                
-                logger.info(f"Successfully loaded data into {table_name}")
-            except Exception as e:
-                logger.error(f"Error loading data into {table_name}: {str(e)}")
-    
-    def verify_data_load(self):
-        """Verify that data was loaded correctly."""
-        for table in ['loans', 'properties']:
-            count = self.db.get_row_count(table)
-            logger.info(f"Total rows in {table}: {count}")
-            
-            if count > 0:
-                # Show distribution by company and trust
-                query = f"""
-                SELECT company, trust, COUNT(*) as row_count
-                FROM {table}
-                GROUP BY company, trust
-                ORDER BY row_count DESC;
-                """
-                distribution = self.db.execute_query_dict(query)
-                logger.info(f"\nData distribution in {table}:")
-                logger.info(distribution)
 
-# Example usage
-if __name__ == "__main__":
-    # Create Spark session
-    spark = SparkSession.builder \
-        .appName("CMBS Data Loader") \
-        .config("spark.jars", "postgresql-42.2.23.jar") \
-        .getOrCreate()
-    
-    try:
-        # Create a loader instance
-        loader = ParquetLoader(spark)
+    def upsert_dataframe(self, df: DataFrame, table_name: str, schema: Dict[str, Any]) -> None:
+        """
+        Upsert DataFrame to PostgreSQL using a temporary table approach.
         
-        # Get DataFrames
-        dataframes = loader.get_dataframes()
+        Args:
+            df: Spark DataFrame to upsert
+            table_name: Target table name
+            schema: JSON schema definition for the table
+        """
+        logger.info(f"Upserting {df.count()} rows to {table_name}")
         
-        # Load data into PostgreSQL
-        loader.load_dataframes_to_postgres(dataframes)
-        
-        # Verify the load
-        loader.verify_data_load()
-        
-    finally:
-        spark.stop() 
+        try:
+            # Get column mapping based on schema
+            column_map = self.get_column_mapping(df, schema)
+
+            # Get table info
+            table_info = self.get_table_info(table_name)
+            
+            # Identify primary key columns from table info
+            pk_columns = table_info[table_info["is_nullable"] == "NO"]["column_name"].tolist()
+            
+            if not pk_columns:
+                raise ValueError("No primary key columns found in table")
+            
+            # Check for extra columns in DataFrame that aren't in schema
+            extra_columns = set(df.columns) - set(schema['columns'].keys())
+            if extra_columns:
+                raise ValueError(f"DataFrame contains columns not in schema: {extra_columns}")
+            
+            # Check for missing required columns in DataFrame
+            missing_required = {col_name for col_name in schema['columns'] if col_name not in pk_columns} - set(df.columns)
+            if missing_required:
+                raise ValueError(f"DataFrame missing required columns: {missing_required}")
+            
+            # Create a temporary table name
+            temp_table = f"{table_name}_temp_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            
+            # Create temporary table with proper schema
+            self.execute_sql(schema_to_sql(schema, temp_table))
+            
+            # Standardize DataFrame column names
+            df_standardized = reduce(
+                lambda acc_df, col_map: acc_df.withColumnRenamed(col_map[0], col_map[1]),
+                column_map.items(),
+                df
+            )
+            
+            # Write DataFrame to temporary table
+            df_standardized.write \
+                .jdbc(url=self.jdbc_url,
+                     table=temp_table,
+                     mode="append",
+                     properties=self.connection_properties)
+            
+            # Build the SET clause excluding primary key columns
+            set_columns = [
+                col_name for col_name in column_map.values()
+                if col_name not in pk_columns
+            ]
+            
+            set_clause = ', '.join(
+                f"{col} = EXCLUDED.{col}"
+                for col in set_columns
+            )
+            
+            # Perform upsert using SQL
+            upsert_sql = f"""
+            INSERT INTO {table_name}
+            SELECT t.* FROM {temp_table} t
+            ON CONFLICT ({', '.join(pk_columns)})
+            DO UPDATE SET
+                {set_clause}
+            """
+            
+            self.execute_sql(upsert_sql)
+            
+            # Drop temporary table
+            self.execute_sql(f"DROP TABLE {temp_table}")
+            
+            logger.info(f"Successfully upserted data into {table_name}")
+            
+        except Exception as e:
+            logger.error(f"Error upserting data into {table_name}: {str(e)}")
+            raise

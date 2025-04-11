@@ -3,10 +3,17 @@ import json
 from datetime import datetime
 from pyspark.sql import SparkSession, functions as F
 from pyspark.sql.types import *
+from dotenv import load_dotenv
 
 from .schema_manager import SchemaManager
 from .data_profiler import DataProfiler
 from .logging_utils import setup_logger
+from .postgres import PostgresConnector
+from .parquet_utils import save_dataframe_as_parquet
+from .spark_config import create_or_get_spark_session
+
+# Load environment variables
+load_dotenv()
 
 # Set up logger for this module
 logger = setup_logger(__name__)
@@ -15,11 +22,18 @@ class XMLProcessor:
     def __init__(self, spark=None, output_dir="./processed_data", partition_by_date=True):
         """Initialize XMLProcessor with optional Spark session and output directory."""
         logger.info("Initializing XMLProcessor")
-        self.spark = spark or self._create_spark_session()
+        self.spark = spark or create_or_get_spark_session(
+            app_name="CMBS-XML-Processor",
+            xml_package=True
+        )
         self.schema_manager = SchemaManager()
         self.data_profiler = DataProfiler()
         self.output_dir = output_dir
         self.partition_by_date = partition_by_date
+        
+        # Initialize PostgreSQL connector with environment variables
+        self.db = PostgresConnector()
+        
         # Create output directories
         logger.info(f"Creating output directories in {output_dir}")
         os.makedirs(output_dir, exist_ok=True)
@@ -27,39 +41,6 @@ class XMLProcessor:
         os.makedirs(os.path.join(output_dir, "audit_logs"), exist_ok=True)
         os.makedirs(os.path.join(output_dir, "summaries"), exist_ok=True)
         
-    def _create_spark_session(self):
-        """Create a local Spark session for testing."""
-        logger.info("Creating new Spark session")
-        import sys
-        python_path = sys.executable
-        
-        # Set Hadoop home and disable native libraries for Windows
-        os.environ['HADOOP_HOME'] = os.path.abspath(os.path.dirname(__file__))
-        os.environ['HADOOP_OPTS'] = '-Djava.library.path=""'
-        
-        builder = SparkSession.builder \
-            .appName("CMBS-XML-Processor") \
-            .master("local[*]") \
-            .config("spark.driver.memory", "4g") \
-            .config("spark.sql.shuffle.partitions", "8") \
-            .config("spark.default.parallelism", "8") \
-            .config("spark.sql.execution.arrow.enabled", "true") \
-            .config("spark.driver.extraJavaOptions", "-XX:+UseG1GC") \
-            .config("spark.pyspark.python", python_path) \
-            .config("spark.pyspark.driver.python", python_path) \
-            .config("spark.jars.packages", "com.databricks:spark-xml_2.12:0.16.0")
-        
-        # Windows-specific configurations
-        if sys.platform.startswith('win'):
-            logger.info("Applying Windows-specific Spark configurations")
-            builder = builder \
-                .config("spark.sql.warehouse.dir", "file:///" + os.path.abspath("spark-warehouse")) \
-                .config("spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version", "2") \
-                .config("spark.hadoop.fs.defaultFS", "file:///") \
-                .config("spark.hadoop.fs.permissions.umask-mode", "000")
-        
-        return builder.getOrCreate()
-    
     def validate_boolean_values(self, df, column):
         """Validate that boolean columns contain only allowed values."""
         logger.info(f"Validating boolean values for column: {column}")
@@ -109,23 +90,6 @@ class XMLProcessor:
         logger.info(f"Creating empty DataFrame with schema type: {schema_type}")
         schema = self.schema_manager.get_spark_schema(schema_type)
         return self.spark.createDataFrame([], schema)
-    
-    def _save_dataframe(self, df, output_path):
-        """Save DataFrame with proper error handling."""
-        logger.info(f"Saving DataFrame to {output_path}")
-        try:
-            # Ensure the directory exists
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            
-            # Save the DataFrame
-            df.write \
-                .mode("append") \
-                .option("compression", "snappy") \
-                .parquet(output_path)
-            logger.info("DataFrame saved successfully")
-                
-        except Exception as e:
-            raise Exception(f"Error saving DataFrame to {output_path}: {str(e)}")
     
     def process_directory(self, input_dir):
         """Process XML files by trust, processing each trust folder separately."""
@@ -357,29 +321,23 @@ class XMLProcessor:
                 
                 # Save trust results
                 if loans_df is not None:
-                    os.makedirs(loans_output_path, exist_ok=True)
-                    
                     logger.info(f"Saving {loans_df.count()} loan records with {len(loans_df.columns)} columns for {trust_name}")
-                    if self.partition_by_date:
-                        loans_df.write \
-                            .mode("append") \
-                            .option("compression", "snappy") \
-                            .partitionBy("reportingPeriodEndDate") \
-                            .parquet(loans_output_path)
-                    else:
-                        loans_df.write \
-                            .mode("append") \
-                            .option("compression", "snappy") \
-                            .parquet(loans_output_path)
+                    partition_by = ["reportingPeriodEndDate"] if self.partition_by_date else None
+                    save_dataframe_as_parquet(loans_df, loans_output_path, partition_by=partition_by)
+                    
+                    # Upsert loans to PostgreSQL
+                    try:
+                        self.db.upsert_dataframe(loans_df, "loans", self.schema_manager.loan_schema)
+                    except Exception as e:
+                        logger.error(f"Error upserting loans to PostgreSQL: {str(e)}")
+                        raise
                 
                 if properties_df is not None:
-                    os.makedirs(properties_output_path, exist_ok=True)
-                    
                     logger.info(f"Saving {properties_df.count()} property records with {len(properties_df.columns)} columns for {trust_name}")
-                    properties_df.write \
-                        .mode("append") \
-                        .option("compression", "snappy") \
-                        .parquet(properties_output_path)
+                    save_dataframe_as_parquet(properties_df, properties_output_path)
+                    
+                    # Upsert properties to PostgreSQL
+                    self.db.upsert_dataframe(properties_df, "properties", self.schema_manager.property_schema)
                 
                 # Create trust summary
                 trust_summary = {
