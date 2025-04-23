@@ -1,9 +1,10 @@
-from pyspark.sql.types import *
-from pyspark.sql import functions as F
-import json
 import os
+import json
 from datetime import datetime
 import re
+from typing import Dict, Any, List
+from pyspark.sql.types import *
+from pyspark.sql import functions as F
 from .logging_utils import setup_logger
 
 # Set up logger for this module
@@ -66,15 +67,20 @@ class SchemaManager:
         # Decimal type cache to avoid recreating the same types
         self._decimal_type_cache = {}
         
+    def _get_schema_dir(self, schema_type):
+        """Get the directory for the schema type."""
+        assert schema_type in ["loan", "property"], "Invalid schema type"
+        return self.loan_schema_dir if schema_type == "loan" else self.property_schema_dir
+    
     def _get_schema_file(self, schema):
         """Get the file path for the schema type."""
-        schema_dir = self.loan_schema_dir if schema["type"] == "loan" else self.property_schema_dir
+        schema_dir = self._get_schema_dir(schema["type"])
         return os.path.join(schema_dir, f"{schema['type']}_schema_v{schema['version']}.json")
     
     def _load_current_schema(self, schema_type, base_schema_file):
         """Load the most recent schema version for the specified type."""
         logger.info(f"Loading current schema for {schema_type}")
-        schema_dir = self.loan_schema_dir if schema_type == "loan" else self.property_schema_dir
+        schema_dir = self._get_schema_dir(schema_type)
         schema_files = sorted([f for f in os.listdir(schema_dir) 
                              if f.startswith(f"{schema_type}_schema_v") and f.endswith(".json")])
         
@@ -150,7 +156,7 @@ class SchemaManager:
     def get_schema_history(self, schema_type):
         """Get the history of schema versions."""
         logger.info(f"Getting schema history for {schema_type}")
-        schema_dir = self.loan_schema_dir if schema_type == "loan" else self.property_schema_dir
+        schema_dir = self._get_schema_dir(schema_type)
         schema_files = sorted([f for f in os.listdir(schema_dir) 
                              if f.startswith(f"{schema_type}_schema_v") and f.endswith(".json")])
         
@@ -167,10 +173,23 @@ class SchemaManager:
         
         return history
     
+    def _get_schema(self, schema_type):
+        """
+        Get the schema definition for the specified type.
+        
+        Args:
+            schema_type: Type of schema to retrieve ('loan' or 'property')
+            
+        Returns:
+            Dictionary containing the schema definition
+        """
+        assert schema_type in ["loan", "property"], "Invalid schema type"
+        return self.loan_schema if schema_type == "loan" else self.property_schema
+    
     def get_spark_schema(self, schema_type="loan"):
         """Convert the specified schema to a Spark StructType."""
         logger.info(f"Converting {schema_type} schema to Spark StructType")
-        schema = self.loan_schema if schema_type == "loan" else self.property_schema
+        schema = self._get_schema(schema_type)
         fields = []
         
         for col_name, col_spec in schema["columns"].items():
@@ -210,7 +229,7 @@ class SchemaManager:
                 if not isinstance(config, str) or config not in ["loan", "property"]:
                     raise ValueError("Each validation config must be either 'loan' or 'property'")
                     
-                schema = self.loan_schema if config == "loan" else self.property_schema
+                schema = self._get_schema(config)
                 for col, new_schema in schema["columns"].items():
                     if col in all_field_specs:
                         # Assert schema matches for shared columns
@@ -489,7 +508,7 @@ class SchemaManager:
         
         # Combine fields from both schemas
         for schema_type in ["loan", "property"]:
-            schema = self.loan_schema if schema_type == "loan" else self.property_schema
+            schema = self._get_schema(schema_type)
             for field_name, field_spec in schema["columns"].items():
                 if field_name not in common_fields:
                     common_fields[field_name] = self._get_spark_type(field_spec["type"])
@@ -499,7 +518,42 @@ class SchemaManager:
     def _get_next_version(self, schema_type):
         """Get the next version number for a schema type."""
         try:
-            current_schema = self.loan_schema if schema_type == "loan" else self.property_schema
+            current_schema = self._get_schema(schema_type)
             return current_schema.get("version", 0) + 1
         except Exception:
             return 1
+
+    def impute_dataframe(self, df, schema_type):
+        """
+        Apply imputation rules to a dataframe based on schema definitions.
+        
+        Args:
+            df: Spark DataFrame to apply imputation to
+            schema_type: Type of schema to use (e.g., 'loan', 'property')
+            
+        Returns:
+            DataFrame with imputation rules applied
+        """
+        logger.info(f"Applying imputation rules for {schema_type} schema")
+        schema = self._get_schema(schema_type)
+        
+        expressions = []
+        
+        # First identify columns that need imputation
+        for col_name, col_schema in schema['columns'].items():
+            # Group columns by imputation rule
+            if col_schema.get('nullable', False) and 'imputation' in col_schema:
+                expressions.append(
+                    F.when(F.col(col_name).isNull(), F.lit(col_schema['imputation']))
+                    .otherwise(F.col(col_name))
+                    .alias(col_name)
+                )
+            else:
+                expressions.append(F.col(col_name))
+        
+        # Log what we're about to do
+        if expressions:
+            logger.info(f"Applying imputation to {len(expressions)} columns")
+            df = df.select(*expressions)
+        
+        return df

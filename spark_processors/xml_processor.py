@@ -302,6 +302,13 @@ class XMLProcessor:
                 if properties_df is not None:
                     properties_df = validated_dfs["property"]
                 loans_df = validated_dfs["loan"]
+                                            
+                # Apply imputation rules from schema
+                if loans_df.count() > 0:
+                    loans_df = self.schema_manager.impute_dataframe(loans_df, "loan")
+                
+                if properties_df is not None and properties_df.count() > 0:
+                    properties_df = self.schema_manager.impute_dataframe(properties_df, "property")
                 
                 # Use Spark's built-in parallelism for data quality checks
                 duplicates = self.data_profiler.check_duplicates(loans_df)

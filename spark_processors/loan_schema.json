@@ -113,7 +113,8 @@
         "underwritingIndicator": {
             "type": "bool",
             "nullable": true,
-            "description": "Underwriting indicator"
+            "description": "Underwriting indicator",
+            "imputation": false
         },
         "lienPositionSecuritizationCode": {
             "type": "char",
@@ -139,14 +140,16 @@
             "whole": 7,
             "decimal": 2,
             "nullable": true,
-            "description": "Periodic P&I payment amount"
+            "description": "Periodic P&I payment amount",
+            "imputation": 0
         },
         "scheduledPrincipalBalanceSecuritizationAmount": {
             "type": "number",
             "whole": 9,
             "decimal": 2,
             "nullable": true,
-            "description": "Scheduled principal balance"
+            "description": "Scheduled principal balance",
+            "imputation": 0
         },
         "paymentFrequencyCode": {
             "type": "UInt8",
@@ -156,12 +159,14 @@
         "NumberPropertiesSecuritization": {
             "type": "UInt8",
             "nullable": true,
-            "description": "Number of properties in securitization"
+            "description": "Number of properties in securitization",
+            "imputation": 0
         },
         "NumberProperties": {
             "type": "UInt8",
             "nullable": true,
-            "description": "Total number of properties"
+            "description": "Total number of properties",
+            "imputation": 0
         },
         "graceDaysAllowedNumber": {
             "type": "UInt8",
@@ -171,27 +176,32 @@
         "interestOnlyIndicator": {
             "type": "bool",
             "nullable": true,
-            "description": "Interest only indicator"
+            "description": "Interest only indicator",
+            "imputation": false
         },
         "balloonIndicator": {
             "type": "bool",
             "nullable": true,
-            "description": "Balloon payment indicator"
+            "description": "Balloon payment indicator",
+            "imputation": false
         },
         "prepaymentPremiumIndicator": {
             "type": "bool",
             "nullable": true,
-            "description": "Prepayment premium indicator"
+            "description": "Prepayment premium indicator",
+            "imputation": false
         },
         "negativeAmortizationIndicator": {
             "type": "bool",
             "nullable": true,
-            "description": "Negative amortization indicator"
+            "description": "Negative amortization indicator",
+            "imputation": false
         },
         "modifiedIndicator": {
             "type": "bool",
             "nullable": true,
-            "description": "Modified loan indicator"
+            "description": "Modified loan indicator",
+            "imputation": false
         },
         "prepaymentLockOutEndDate": {
             "type": "date",
@@ -206,21 +216,24 @@
         "reportPeriodModificationIndicator": {
             "type": "bool",
             "nullable": true,
-            "description": "Report period modification indicator"
+            "description": "Report period modification indicator",
+            "imputation": false
         },
         "reportPeriodBeginningScheduleLoanBalanceAmount": {
             "type": "number",
             "whole": 9,
             "decimal": 2,
             "nullable": true,
-            "description": "Beginning scheduled loan balance"
+            "description": "Beginning scheduled loan balance",
+            "imputation": 0
         },
         "totalScheduledPrincipalInterestDueAmount": {
             "type": "number",
             "whole": 7,
             "decimal": 2,
             "nullable": true,
-            "description": "Total scheduled P&I due"
+            "description": "Total scheduled P&I due",
+            "imputation": 0
         },
         "reportPeriodInterestRatePercentage": {
             "type": "number",
@@ -241,35 +254,40 @@
             "whole": 7,
             "decimal": 2,
             "nullable": true,
-            "description": "Scheduled interest amount"
+            "description": "Scheduled interest amount",
+            "imputation": 0
         },
         "scheduledPrincipalAmount": {
             "type": "number",
             "whole": 7,
             "decimal": 2,
             "nullable": true,
-            "description": "Scheduled principal amount"
+            "description": "Scheduled principal amount",
+            "imputation": 0
         },
         "unscheduledPrincipalCollectedAmount": {
             "type": "number",
             "whole": 9,
             "decimal": 2,
             "nullable": true,
-            "description": "Unscheduled principal collected"
+            "description": "Unscheduled principal collected",
+            "imputation": 0
         },
         "reportPeriodEndActualBalanceAmount": {
             "type": "number",
             "whole": 9,
             "decimal": 2,
             "nullable": true,
-            "description": "End actual balance"
+            "description": "End actual balance",
+            "imputation": 0
         },
         "reportPeriodEndScheduledLoanBalanceAmount": {
             "type": "number",
             "whole": 9,
             "decimal": 2,
             "nullable": true,
-            "description": "End scheduled loan balance"
+            "description": "End scheduled loan balance",
+            "imputation": 0
         },
         "paidThroughDate": {
             "type": "date",
@@ -284,28 +302,32 @@
         "nonRecoverabilityIndicator": {
             "type": "bool",
             "nullable": true,
-            "description": "Non-recoverability indicator"
+            "description": "Non-recoverability indicator",
+            "imputation": false
         },
         "totalPrincipalInterestAdvancedOutstandingAmount": {
             "type": "number",
             "whole": 9,
             "decimal": 2,
             "nullable": true,
-            "description": "Total P&I advances outstanding"
+            "description": "Total P&I advances outstanding",
+            "imputation": 0
         },
         "totalTaxesInsuranceAdvancesOutstandingAmount": {
             "type": "number",
             "whole": 9,
             "decimal": 2,
             "nullable": true,
-            "description": "Total T&I advances outstanding"
+            "description": "Total T&I advances outstanding",
+            "imputation": 0
         },
         "otherExpensesAdvancedOutstandingAmount": {
             "type": "number",
             "whole": 9,
             "decimal": 2,
             "nullable": true,
-            "description": "Other expenses advances outstanding"
+            "description": "Other expenses advances outstanding",
+            "imputation": 0
         },
         "paymentStatusLoanCode": {
             "type": "char",
@@ -322,7 +344,8 @@
         "assetSubjectDemandIndicator": {
             "type": "bool",
             "nullable": true,
-            "description": "Asset subject to demand"
+            "description": "Asset subject to demand",
+            "imputation": false
         },
         "originalAmortizationTermNumber": {
             "type": "UInt16",
@@ -386,14 +409,16 @@
             "whole": 1,
             "decimal": 2,
             "nullable": true,
-            "description": "Other interest adjustment amount"
+            "description": "Other interest adjustment amount",
+            "imputation": 0
         },
         "otherPrincipalAdjustmentAmount": {
             "type": "number",
             "whole": 1,
             "decimal": 2,
             "nullable": true,
-            "description": "Other principal adjustment amount"
+            "description": "Other principal adjustment amount",
+            "imputation": 0
         },
         "postModificationAmortizationPeriodAmount": {
             "type": "UInt8",
@@ -410,21 +435,24 @@
             "whole": 7,
             "decimal": 2,
             "nullable": true,
-            "description": "Prepayment premium yield maintenance received amount"
+            "description": "Prepayment premium yield maintenance received amount",
+            "imputation": 0
         },
         "realizedLossToTrustAmount": {
             "type": "number",
             "whole": 1,
             "decimal": 2,
             "nullable": true,
-            "description": "Realized loss to trust amount"
+            "description": "Realized loss to trust amount",
+            "imputation": 0
         },
         "repurchaseAmount": {
             "type": "number",
             "whole": 7,
             "decimal": 2,
             "nullable": true,
-            "description": "Repurchase amount"
+            "description": "Repurchase amount",
+            "imputation": 0
         },
         "workoutStrategyCode": {
             "type": "UInt8",

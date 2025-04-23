@@ -250,7 +250,8 @@
             "whole": 13,
             "decimal": 2,
             "nullable": true,
-            "description": "Operating expenses amount at securitization"
+            "description": "Operating expenses amount at securitization",
+            "imputation": 0
         },
         "netOperatingIncomeSecuritizationAmount": {
             "type": "number",
@@ -313,7 +314,8 @@
             "whole": 8,
             "decimal": 2,
             "nullable": true,
-            "description": "Most recent debt service amount"
+            "description": "Most recent debt service amount",
+            "imputation": 0
         },
         "mostRecentDebtServiceCoverageCode": {
             "type": "string",
@@ -350,7 +352,8 @@
             "whole": 8,
             "decimal": 2,
             "nullable": true,
-            "description": "Most recent net cash flow amount"
+            "description": "Most recent net cash flow amount",
+            "imputation": 0
         },
         "mostRecentNetOperatingIncomeAmount": {
             "type": "number",
@@ -384,12 +387,14 @@
             "whole": 8,
             "decimal": 2,
             "nullable": true,
-            "description": "Operating expenses amount"
+            "description": "Operating expenses amount",
+            "imputation": 0
         },
         "is_reporting_date_imputed": {
             "type": "bool",
             "nullable": false,
-            "description": "Indicator if the reporting date was imputed"
+            "description": "Indicator if the reporting date was imputed",
+            "imputation": false
         }
     }
 }
