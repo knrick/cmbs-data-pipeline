@@ -1,0 +1,47 @@
+version: 2
+
+sources:
+  - name: cmbs
+    description: "Commercial Mortgage-Backed Securities (CMBS) data from SEC EDGAR filings"
+    database: "{{ env_var('POSTGRES_DB', 'cmbs_data') }}"
+    schema: public
+    tables:
+      - name: loans
+        description: "Loan-level data from CMBS trusts with monthly performance metrics"
+        columns:
+          - name: asset_num
+            description: "Unique identifier for the loan asset"
+            tests:
+              - not_null
+              
+          - name: reporting_period_end_date
+            description: "Date of the reporting period"
+            tests:
+              - not_null
+              
+          - name: trust
+            description: "The CMBS trust identifier"
+            tests:
+              - not_null
+              
+          - name: company 
+            description: "The company/issuer of the CMBS trust"
+            
+          - name: source_file
+            description: "The source file from which the data was extracted"
+            
+      - name: properties
+        description: "Property details for collateral in CMBS loans"
+        columns:
+          - name: asset_num
+            description: "Unique identifier for the property asset"
+            tests:
+              - not_null
+              
+          - name: reporting_period_end_date
+            description: "Date of the reporting period"
+            tests:
+              - not_null 
+            
+          - name: source_file
+            description: "The source file from which the data was extracted" 

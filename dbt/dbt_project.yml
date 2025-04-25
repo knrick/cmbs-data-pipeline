@@ -1,0 +1,41 @@
+name: 'cmbs_analytics'
+version: '1.0.0'
+config-version: 2
+
+profile: 'cmbs_analytics'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+vars:
+  'dbt_date:time_zone': 'America/New_York'
+
+models:
+  cmbs_analytics:
+    dimensions:
+      +materialized: table
+      +schema: dim
+      
+    facts:
+      +materialized: incremental
+      +schema: fct
+      +on_schema_change: "sync_all_columns"
+      
+    marts:
+      +materialized: table
+      +schema: mart
+      
+    utils:
+      +materialized: ephemeral
+      
+    staging:
+      +materialized: view 

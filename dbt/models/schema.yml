@@ -1,98 +1,213 @@
 version: 2
 
-sources:
-  - name: cmbs
-    description: "CMBS loan data from SEC EDGAR filings"
-    tables:
-      - name: compressed_loans
-        description: "Compressed CMBS loan data from PySpark processing"
-        columns:
-          - name: trust
-            description: "CMBS trust identifier"
-            tests:
-              - not_null
-          - name: loan_number
-            description: "Unique loan identifier within trust"
-            tests:
-              - not_null
-          - name: period_start
-            description: "Start of the reporting period"
-            tests:
-              - not_null
-
 models:
-  - name: stg_cmbs_loans
-    description: "Staging model for CMBS loans"
+  - name: dim_date
+    description: "Calendar dimension containing all reporting dates and useful date attributes"
     columns:
-      - name: trust
-        description: "CMBS trust identifier"
-        tests:
-          - not_null
-      - name: loan_number
-        description: "Unique loan identifier within trust"
-        tests:
-          - not_null
-      - name: period_start
-        description: "Start of the reporting period"
-        tests:
-          - not_null
-    tests:
-      - unique:
-          columns: ["trust", "loan_number", "period_start"]
-
-  - name: dim_properties
-    description: "Property dimension table"
-    columns:
-      - name: property_key
-        description: "Surrogate key for property"
+      - name: date_id
+        description: "Primary key for the date dimension"
         tests:
           - unique
           - not_null
-      - name: property_type
-        description: "Type of property (e.g., Office, Retail, Multifamily)"
+      - name: date_day
+        description: "Calendar date"
+        tests:
+          - not_null
+
+  - name: dim_trust
+    description: "Dimension table for CMBS trusts with key trust metadata"
+    columns:
+      - name: trust_id
+        description: "CMBS trust identifier"
+        tests:
+          - unique
+          - not_null
+      - name: trust_name
+        description: "CMBS trust name"
+        tests:
+          - not_null
+      - name: issuer
+        description: "Issuer/company of the CMBS trust"
+      - name: delinquency_ratio
+        description: "Ratio of delinquent loans to total loans"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+              inclusive: true
+
+  - name: dim_property
+    description: "Property dimension table containing the latest property details"
+    columns:
+      - name: property_id
+        description: "Unique identifier for the property"
+        tests:
+          - unique
+          - not_null
+      - name: property_type_code
+        description: "Code indicating the property type (e.g., RT for retail)"
+      - name: property_type_description
+        description: "Full description of the property type"
         tests:
           - accepted_values:
-              values: ['OFFICE', 'RETAIL', 'MULTIFAMILY', 'INDUSTRIAL', 'HOTEL', 'MIXED_USE', 'OTHER']
+              values: ['Retail', 'Office', 'Multifamily', 'Industrial', 'Healthcare', 'Lodging/Hotel', 'Mixed Use', 'Self Storage', 'Warehouse', 'Mobile Home', 'Other']
+      - name: property_state
+        description: "State where the property is located"
 
-  - name: fct_loan_performance
-    description: "Fact table for loan performance metrics"
+  - name: dim_geography
+    description: "Geography dimension with standardized location data"
     columns:
-      - name: property_key
-        description: "Foreign key to dim_properties"
+      - name: geo_id
+        description: "Surrogate key for the geography"
         tests:
+          - unique
+          - not_null
+      - name: state
+        description: "Property state"
+        tests:
+          - dbt_expectations.expect_column_values_to_match_regex:
+              regex: '^[A-Z]{2}$'
+      - name: region
+        description: "Geographic region classification"
+      - name: division
+        description: "Census Bureau division classification"
+
+  - name: fct_loan_monthly_performance
+    description: "Fact table for monthly loan performance"
+    columns:
+      - name: performance_id
+        description: "Surrogate key for the performance record"
+        tests:
+          - unique
+          - not_null
+      - name: loan_id
+        description: "Foreign key to the loan"
+        tests:
+          - not_null
+      - name: reporting_date
+        description: "Date of the reporting period"
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: "'2000-01-01'"
+              max_value: "CURRENT_DATE"
+      - name: trust_id
+        description: "Foreign key to the trust dimension"
+        tests:
+          - not_null
           - relationships:
-              to: ref('dim_properties')
-              field: property_key
-      - name: period_start
-        description: "Start of the reporting period"
+              to: ref('dim_trust')
+              field: trust_id
+      - name: delinquency_status
+        description: "Delinquency status code"
+      - name: is_modified
+        description: "Flag indicating if the loan has been modified"
+      - name: is_past_maturity
+        description: "Flag indicating if the loan is past its maturity date"
+      - name: current_bal
+        description: "Current outstanding balance of the loan"
         tests:
           - not_null
-      - name: current_loan_amount
-        description: "Current outstanding loan amount"
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+      - name: days_past_due
+        description: "Days past due calculated from delinquency status"
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 180
+      - name: current_intr_rate
+        description: "Current interest rate for the reporting period"
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 0.10
+      - name: maturity_date
+        description: "Date when the loan matures"
+      - name: source_file
+        description: "Source file from which the data was extracted"
+
+  - name: fct_property_metrics
+    description: "Fact table for property-level metrics"
+    columns:
+      - name: property_metric_id
+        description: "Surrogate key for the property metric record"
+        tests:
+          - unique
+          - not_null
+      - name: property_id
+        description: "Foreign key to the property dimension"
         tests:
           - not_null
-          - positive_value
+          - relationships:
+              to: ref('dim_property')
+              field: property_id
+      - name: reporting_date
+        description: "Date of the reporting period"
+        tests:
+          - not_null
+      - name: current_dscr
+        description: "Current debt service coverage ratio"
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+      - name: current_occupancy_pct
+        description: "Current physical occupancy percentage"
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100
+      - name: has_largest_tenant
+        description: "Flag indicating if the property has a largest tenant"
+      - name: has_second_largest_tenant
+        description: "Flag indicating if the property has a second largest tenant"
+      - name: has_third_largest_tenant
+        description: "Flag indicating if the property has a third largest tenant"
+      - name: source_file
+        description: "Source file from which the data was extracted"
+
+  - name: fct_loan_modifications
+    description: "Fact table for loan modification events"
+    columns:
+      - name: modification_id
+        description: "Surrogate key for the modification record"
+        tests:
+          - unique
+          - not_null
+      - name: loan_id
+        description: "Foreign key to the loan"
+        tests:
+          - not_null
+      - name: modification_date
+        description: "Date when the modification occurred"
+        tests:
+          - not_null
+      - name: has_rate_change
+        description: "Flag indicating if the interest rate changed"
+      - name: has_maturity_change
+        description: "Flag indicating if the maturity date changed"
     tests:
-      - unique:
-          columns: ["property_key", "period_start"]
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: ["loan_id", "modification_date"]
 
   - name: loan_risk_metrics
     description: "Analytics model for loan risk assessment"
     columns:
-      - name: trust
+      - name: trust_id
         description: "CMBS trust identifier"
         tests:
           - not_null
-      - name: period_start
-        description: "Reporting period"
+      - name: reporting_date
+        description: "Reporting period date"
         tests:
           - not_null
-      - name: risk_score
-        description: "Composite risk score (1-10, higher is riskier)"
+      - name: avg_risk_score
+        description: "Average risk score (0-10, higher is riskier)"
         tests:
-          - not_null
-          - accepted_values:
-              values: [0,1,2,3,4,5,6,7,8,9,10]
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 10
+              inclusive: true
     tests:
-      - unique:
-          columns: ["trust", "property_type", "property_state", "period_start"] 
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: ["trust_id", "property_type_code", "property_state", "reporting_date"] 

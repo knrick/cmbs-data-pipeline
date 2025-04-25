@@ -2,96 +2,173 @@
     config(
         materialized='table',
         partition_by={
-            'field': 'period_start',
+            'field': 'reporting_date',
             'data_type': 'date',
             'granularity': 'month'
-        }
+        },
+        post_hook = [
+            "CREATE INDEX IF NOT EXISTS idx_{{ this.name }}_trust_date ON {{ this }} (trust_id, reporting_date)",
+            "CREATE INDEX IF NOT EXISTS idx_{{ this.name }}_property_type ON {{ this }} (property_type_code, reporting_date)",
+            "ANALYZE {{ this }}"
+        ]
     )
 }}
 
-with risk_metrics as (
-    select
-        f.property_key,
-        f.trust,
-        f.loan_number,
-        f.period_start,
-        p.property_type,
-        p.property_state,
-        -- Current metrics
-        f.current_loan_amount,
-        f.loan_to_value_ratio,
-        f.debt_service_coverage_ratio,
-        f.physical_occupancy,
-        -- Risk indicators
-        case
-            when f.loan_to_value_ratio > 0.8 then 'High'
-            when f.loan_to_value_ratio > 0.6 then 'Medium'
-            else 'Low'
-        end as ltv_risk,
-        case
-            when f.debt_service_coverage_ratio < 1.2 then 'High'
-            when f.debt_service_coverage_ratio < 1.5 then 'Medium'
-            else 'Low'
-        end as dscr_risk,
-        case
-            when f.physical_occupancy < 0.8 then 'High'
-            when f.physical_occupancy < 0.9 then 'Medium'
-            else 'Low'
-        end as occupancy_risk,
-        -- Trend analysis
-        case
-            when f.loan_amount_change > 0 then 'Increasing'
-            when f.loan_amount_change < 0 then 'Decreasing'
-            else 'Stable'
-        end as loan_amount_trend,
-        case
-            when f.occupancy_change < -0.05 then 'Declining'
-            when f.occupancy_change > 0.05 then 'Improving'
-            else 'Stable'
-        end as occupancy_trend,
-        -- Composite risk score (1-10, higher is riskier)
-        (
-            case
-                when f.loan_to_value_ratio > 0.8 then 4
-                when f.loan_to_value_ratio > 0.6 then 2
-                else 0
-            end +
-            case
-                when f.debt_service_coverage_ratio < 1.2 then 4
-                when f.debt_service_coverage_ratio < 1.5 then 2
-                else 0
-            end +
-            case
-                when f.physical_occupancy < 0.8 then 2
-                when f.physical_occupancy < 0.9 then 1
-                else 0
-            end
-        ) as risk_score
-    from {{ ref('fct_loan_performance') }} f
-    join {{ ref('dim_properties') }} p
-        on f.property_key = p.property_key
+WITH loan_and_property_data AS (
+    SELECT
+        lp.loan_id,
+        lp.reporting_date,
+        lp.trust_id,
+        lp.current_bal AS current_balance,
+        lp.days_past_due,
+        lp.delinquency_status,
+        lp.current_intr_rate AS current_interest_rate,
+        lp.begin_bal AS beginning_balance,
+        -- Join to property metrics
+        pm.property_id,
+        pm.property_type_code,
+        pm.current_dscr,
+        pm.current_occupancy_pct,
+        pm.valuation_change_pct,
+        -- Calculate LTV (loan-to-value ratio) where we have property valuation data
+        CASE 
+            WHEN pm.current_valuation > 0 THEN lp.current_bal / pm.current_valuation
+            ELSE NULL
+        END AS loan_to_value_ratio,
+        -- Get property state
+        dp.property_state,
+        -- Calculate month-over-month changes
+        lp.current_bal - lp.begin_bal AS loan_amount_change
+    FROM {{ ref('fct_loan_monthly_performance') }} lp
+    LEFT JOIN {{ ref('fct_property_metrics') }} pm 
+        ON lp.loan_id = pm.property_id 
+        AND lp.reporting_date = pm.reporting_date
+    LEFT JOIN {{ ref('dim_property') }} dp 
+        ON lp.loan_id = dp.property_id
 ),
 
-aggregated_metrics as (
-    select
-        trust,
-        property_type,
+risk_metrics AS (
+    SELECT
+        loan_id,
+        property_id,
+        trust_id,
+        reporting_date,
+        property_type_code,
         property_state,
-        period_start,
+        -- Current metrics
+        current_balance,
+        loan_to_value_ratio,
+        current_dscr,
+        current_occupancy_pct,
+        
+        -- Risk indicators
+        CASE
+            WHEN loan_to_value_ratio > 0.8 THEN 'High'
+            WHEN loan_to_value_ratio > 0.6 THEN 'Medium'
+            ELSE 'Low'
+        END AS ltv_risk,
+        
+        CASE
+            WHEN current_dscr < 1.2 THEN 'High'
+            WHEN current_dscr < 1.5 THEN 'Medium'
+            ELSE 'Low'
+        END AS dscr_risk,
+        
+        CASE
+            WHEN current_occupancy_pct < 0.8 THEN 'High'
+            WHEN current_occupancy_pct < 0.9 THEN 'Medium'
+            ELSE 'Low'
+        END AS occupancy_risk,
+        
+        CASE
+            WHEN days_past_due > 60 THEN 'High'
+            WHEN days_past_due > 30 THEN 'Medium'
+            ELSE 'Low'
+        END AS delinquency_risk,
+        
+        -- Trend analysis
+        CASE
+            WHEN loan_amount_change > 0 THEN 'Increasing'
+            WHEN loan_amount_change < 0 THEN 'Decreasing'
+            ELSE 'Stable'
+        END AS loan_amount_trend,
+        
+        CASE
+            WHEN valuation_change_pct < -0.05 THEN 'Declining'
+            WHEN valuation_change_pct > 0.05 THEN 'Improving'
+            ELSE 'Stable'
+        END AS valuation_trend,
+        
+        -- Composite risk score (0-10, higher is riskier)
+        (
+            -- LTV component (0-4 points)
+            CASE
+                WHEN loan_to_value_ratio > 0.8 THEN 4
+                WHEN loan_to_value_ratio > 0.6 THEN 2
+                WHEN loan_to_value_ratio IS NOT NULL THEN 0
+                ELSE 2  -- Default medium risk when unknown
+            END +
+            
+            -- DSCR component (0-4 points)
+            CASE
+                WHEN current_dscr < 1.2 THEN 4
+                WHEN current_dscr < 1.5 THEN 2
+                WHEN current_dscr IS NOT NULL THEN 0
+                ELSE 2  -- Default medium risk when unknown
+            END +
+            
+            -- Occupancy component (0-2 points)
+            CASE
+                WHEN current_occupancy_pct < 0.8 THEN 2
+                WHEN current_occupancy_pct < 0.9 THEN 1
+                WHEN current_occupancy_pct IS NOT NULL THEN 0
+                ELSE 1  -- Default medium risk when unknown
+            END +
+            
+            -- Delinquency component (0-10 points)
+            CASE
+                WHEN delinquency_status IN ('3', '4', '5', '6') THEN 10  -- 90+ days = very high risk
+                WHEN delinquency_status IN ('1', '2') THEN 6  -- 30-60 days = high risk
+                ELSE 0  -- Current
+            END
+        ) / 2 AS risk_score  -- Normalize to 0-10 scale
+    FROM loan_and_property_data
+),
+
+aggregated_metrics AS (
+    SELECT
+        trust_id,
+        property_type_code,
+        property_state,
+        reporting_date,
+        
         -- Portfolio metrics
-        count(*) as loan_count,
-        sum(current_loan_amount) as total_loan_amount,
-        avg(loan_to_value_ratio) as avg_ltv,
-        avg(debt_service_coverage_ratio) as avg_dscr,
-        avg(physical_occupancy) as avg_occupancy,
+        COUNT(*) AS loan_count,
+        SUM(current_balance) AS total_loan_amount,
+        AVG(loan_to_value_ratio) AS avg_ltv,
+        AVG(current_dscr) AS avg_dscr,
+        AVG(current_occupancy_pct) AS avg_occupancy,
+        
         -- Risk distribution
-        sum(case when ltv_risk = 'High' then 1 else 0 end) / count(*)::float as high_ltv_pct,
-        sum(case when dscr_risk = 'High' then 1 else 0 end) / count(*)::float as high_dscr_pct,
-        sum(case when occupancy_risk = 'High' then 1 else 0 end) / count(*)::float as high_occupancy_risk_pct,
+        SUM(CASE WHEN ltv_risk = 'High' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)::FLOAT AS high_ltv_pct,
+        SUM(CASE WHEN dscr_risk = 'High' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)::FLOAT AS high_dscr_pct,
+        SUM(CASE WHEN occupancy_risk = 'High' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)::FLOAT AS high_occupancy_risk_pct,
+        SUM(CASE WHEN delinquency_risk = 'High' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)::FLOAT AS high_delinquency_risk_pct,
+        
         -- Average risk score
-        avg(risk_score) as avg_risk_score
-    from risk_metrics
-    group by 1, 2, 3, 4
+        AVG(risk_score) AS avg_risk_score,
+        
+        -- Risk stratification
+        SUM(CASE WHEN risk_score >= 8 THEN current_balance ELSE 0 END) AS high_risk_balance,
+        SUM(CASE WHEN risk_score >= 4 AND risk_score < 8 THEN current_balance ELSE 0 END) AS medium_risk_balance,
+        SUM(CASE WHEN risk_score < 4 THEN current_balance ELSE 0 END) AS low_risk_balance,
+        
+        -- Calculate risk ratios
+        SUM(CASE WHEN risk_score >= 8 THEN current_balance ELSE 0 END) / NULLIF(SUM(current_balance), 0) AS high_risk_ratio,
+        SUM(CASE WHEN risk_score >= 4 AND risk_score < 8 THEN current_balance ELSE 0 END) / NULLIF(SUM(current_balance), 0) AS medium_risk_ratio,
+        SUM(CASE WHEN risk_score < 4 THEN current_balance ELSE 0 END) / NULLIF(SUM(current_balance), 0) AS low_risk_ratio
+    FROM risk_metrics
+    GROUP BY trust_id, property_type_code, property_state, reporting_date
 )
 
-select * from aggregated_metrics 
+SELECT * FROM aggregated_metrics 
