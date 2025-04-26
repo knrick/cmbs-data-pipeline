@@ -8,14 +8,14 @@
   )
 }}
 
--- Using generate_series instead of date_spine to avoid compilation issues
 WITH date_spine AS (
-    SELECT
-        (generate_series(
-            '2000-01-01'::date,
-            '2030-12-31'::date,
-            '1 day'::interval
-        ))::date AS date_day
+    {{
+        dbt.date_spine(
+            'day',
+            "make_date(2000, 1, 1)",
+            "make_date(2030, 12, 31)"
+        )
+    }}
 )
 
 SELECT

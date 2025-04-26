@@ -2,237 +2,83 @@ version: 2
 
 metrics:
   - name: total_current_balance
-    label: Total Current Balance
+    type: SIMPLE
+    type_params:
+      measure: current_balance
+    label: "Total Current Balance"
     description: "The total outstanding balance of all loans as of the reporting date"
-    
-    calculation_method: sum
-    expression: current_balance
-    
-    timestamp: reporting_date
-    time_grains: [day, week, month, quarter, year]
-    
-    dimensions:
-      - trust_id
-      - loan_status
-      
     meta:
       format: currency
-    
-    filters:
-      - field: current_balance
-        operator: ">="
-        value: "0"
-        
-    sources:
-      - name: fct_loan_monthly_performance
-        relation_name: ref('fct_loan_monthly_performance')
 
   - name: total_delinquent_balance
-    label: Total Delinquent Balance
+    type: SIMPLE
+    type_params:
+      measure: delinquent_balance
+    label: "Total Delinquent Balance"
     description: "The total balance of delinquent loans as of the reporting date"
-    
-    calculation_method: sum
-    expression: current_balance
-    
-    timestamp: reporting_date
-    time_grains: [day, week, month, quarter, year]
-    
-    dimensions:
-      - trust_id
-      - loan_status
-      
     meta:
       format: currency
-      
-    filters:
-      - field: days_past_due
-        operator: ">"
-        value: "0"
-        
-    sources:
-      - name: fct_loan_monthly_performance
-        relation_name: ref('fct_loan_monthly_performance')
 
   - name: delinquency_rate
-    label: Delinquency Rate
+    type: ratio
+    type_params:
+      numerator: total_delinquent_balance
+      denominator: total_current_balance
+    label: "Delinquency Rate"
     description: "The percentage of loan balance that is delinquent"
-    
-    calculation_method: derived
-    expression: "{{ metric('total_delinquent_balance') }} / nullif({{ metric('total_current_balance') }}, 0)"
-    
-    timestamp: reporting_date
-    time_grains: [day, week, month, quarter, year]
-    
-    dimensions:
-      - trust_id
-      
     meta:
       format: percentage
 
   - name: average_occupancy
-    label: Average Occupancy
+    type: SIMPLE
+    type_params:
+      measure: average_occupancy
+    label: "Average Occupancy"
     description: "The average occupancy percentage across properties"
-    
-    calculation_method: average
-    expression: current_occupancy_pct
-    
-    timestamp: reporting_date
-    time_grains: [month, quarter, year]
-    
-    dimensions:
-      - trust_id
-      - property_type_code
-      
     meta:
       format: percentage
-      
-    sources:
-      - name: fct_property_metrics
-        relation_name: ref('fct_property_metrics')
 
   - name: average_dscr
-    label: Average DSCR
+    type: SIMPLE
+    type_params:
+      measure: average_dscr
+    label: "Average DSCR"
     description: "The average debt service coverage ratio across properties"
-    
-    calculation_method: average
-    expression: current_dscr
-    
-    timestamp: reporting_date
-    time_grains: [month, quarter, year]
-    
-    dimensions:
-      - trust_id
-      - property_type_code
-      
     meta:
       format: decimal
-      
-    sources:
-      - name: fct_property_metrics
-        relation_name: ref('fct_property_metrics')
 
   - name: total_loan_count
-    label: Total Loan Count
+    type: SIMPLE
+    type_params:
+      measure: loan_count
+    label: "Total Loan Count"
     description: "The total number of loans"
-    
-    calculation_method: count_distinct
-    expression: loan_id
-    
-    timestamp: reporting_date
-    time_grains: [day, week, month, quarter, year]
-    
-    dimensions:
-      - trust_id
-      - loan_status
-      
     meta:
       format: number
-      
-    sources:
-      - name: fct_loan_monthly_performance
-        relation_name: ref('fct_loan_monthly_performance')
-
-  - name: average_remaining_balance_pct
-    label: Average Remaining Balance %
-    description: "The average percentage of original loan amount still outstanding"
-    
-    calculation_method: average
-    expression: remaining_balance_pct
-    
-    timestamp: reporting_date
-    time_grains: [month, quarter, year]
-    
-    dimensions:
-      - trust_id
-      
-    meta:
-      format: percentage
-      
-    sources:
-      - name: fct_loan_monthly_performance
-        relation_name: ref('fct_loan_monthly_performance')
-
-  - name: modification_count
-    label: Modification Count
-    description: "The count of loan modifications"
-    
-    calculation_method: count
-    expression: modification_id
-    
-    timestamp: modification_date
-    time_grains: [month, quarter, year]
-    
-    dimensions:
-      - trust_id
-      - has_rate_change
-      - has_maturity_change
-      
-    meta:
-      format: number
-      
-    sources:
-      - name: fct_loan_modifications
-        relation_name: ref('fct_loan_modifications')
 
   - name: average_interest_rate
-    label: Average Interest Rate
+    type: SIMPLE
+    type_params:
+      measure: average_interest_rate
+    label: "Average Interest Rate"
     description: "The average interest rate across loans"
-    
-    calculation_method: average
-    expression: current_interest_rate
-    
-    timestamp: reporting_date
-    time_grains: [month, quarter, year]
-    
-    dimensions:
-      - trust_id
-      - loan_status
-      
     meta:
       format: percentage
-      
-    sources:
-      - name: fct_loan_monthly_performance
-        relation_name: ref('fct_loan_monthly_performance')
+
+  - name: total_property_count
+    type: SIMPLE
+    type_params:
+      measure: property_count
+    label: "Total Property Count"
+    description: "The total number of properties"
+    meta:
+      format: number
 
   - name: average_valuation_change
-    label: Average Valuation Change %
+    type: SIMPLE
+    type_params:
+      measure: valuation_change_pct
+    label: "Average Valuation Change %"
     description: "The average percentage change in property valuation from securitization"
-    
-    calculation_method: average
-    expression: valuation_change_pct
-    
-    timestamp: reporting_date
-    time_grains: [month, quarter, year]
-    
-    dimensions:
-      - trust_id
-      - property_type_code
-      
     meta:
-      format: percentage
-      
-    sources:
-      - name: fct_property_metrics
-        relation_name: ref('fct_property_metrics')
-
-  - name: payment_shortfall_total
-    label: Payment Shortfall Total
-    description: "The total amount of payment shortfall"
-    
-    calculation_method: sum
-    expression: payment_shortfall
-    
-    timestamp: reporting_date
-    time_grains: [month, quarter, year]
-    
-    dimensions:
-      - trust_id
-      - loan_status
-      
-    meta:
-      format: currency
-      
-    sources:
-      - name: fct_loan_monthly_performance
-        relation_name: ref('fct_loan_monthly_performance') 
+      format: percentage 

@@ -3,6 +3,8 @@ version: 2
 models:
   - name: dim_date
     description: "Calendar dimension containing all reporting dates and useful date attributes"
+    time_spine:
+      standard_granularity_column: date_day
     columns:
       - name: date_id
         description: "Primary key for the date dimension"
@@ -11,6 +13,7 @@ models:
           - not_null
       - name: date_day
         description: "Calendar date"
+        granularity: day
         tests:
           - not_null
 
@@ -211,3 +214,119 @@ models:
     tests:
       - dbt_utils.unique_combination_of_columns:
           combination_of_columns: ["trust_id", "property_type_code", "property_state", "reporting_date"] 
+
+semantic_models:
+  - name: loans
+    description: "Monthly loan performance metrics from CMBS trusts"
+    model: ref('fct_loan_monthly_performance')
+    defaults:
+      agg_time_dimension: reporting_date
+    
+    entities:
+      - name: loan
+        type: primary
+        expr: loan_id
+      
+      - name: trust
+        type: foreign
+        expr: trust_id
+    
+    dimensions:
+      - name: reporting_date
+        type: time
+        type_params:
+          time_granularity: day
+      
+      - name: delinquency_status
+        type: categorical
+        expr: delinquency_status
+      
+      - name: days_past_due
+        type: categorical
+        expr: days_past_due
+      
+      - name: loan_status
+        type: categorical
+        expr: loan_status
+    
+    measures:
+      - name: current_balance
+        description: "Current loan balance"
+        expr: current_bal
+        agg: sum
+      
+      - name: beginning_balance
+        description: "Beginning loan balance"
+        expr: begin_bal
+        agg: sum
+      
+      - name: delinquent_balance
+        description: "Delinquent loan balance"
+        expr: "CASE WHEN days_past_due > 0 THEN current_bal ELSE 0 END"
+        agg: sum
+      
+      - name: loan_count
+        description: "Count of loans"
+        expr: "1"
+        agg: count_distinct
+      
+      - name: delinquent_loan_count
+        description: "Count of delinquent loans"
+        expr: "CASE WHEN days_past_due > 0 THEN 1 ELSE 0 END"
+        agg: sum
+      
+      - name: average_interest_rate
+        description: "Average interest rate"
+        expr: current_intr_rate
+        agg: average
+
+  - name: properties
+    description: "Property metrics from CMBS trusts"
+    model: ref('fct_property_metrics')
+    defaults:
+      agg_time_dimension: reporting_date
+    
+    entities:
+      - name: property
+        type: primary
+        expr: property_id
+      
+      - name: trust
+        type: foreign
+        expr: trust_id
+    
+    dimensions:
+      - name: reporting_date
+        type: time
+        type_params:
+          time_granularity: day
+      
+      - name: property_type_code
+        type: categorical
+        expr: property_type_code
+    
+    measures:
+      - name: current_valuation
+        description: "Current property valuation"
+        expr: current_valuation
+        agg: sum
+      
+      - name: average_occupancy
+        description: "Average occupancy percentage"
+        expr: current_occupancy_pct
+        agg: average
+      
+      - name: average_dscr
+        description: "Average debt service coverage ratio"
+        expr: current_dscr
+        agg: average
+      
+      - name: property_count
+        description: "Count of properties"
+        expr: "1"
+        agg: count_distinct
+          
+      - name: valuation_change_pct
+        description: "Percentage change in property valuation"
+        expr: valuation_change_pct
+        agg: average 

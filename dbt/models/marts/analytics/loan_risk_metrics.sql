@@ -19,11 +19,11 @@ WITH loan_and_property_data AS (
         lp.loan_id,
         lp.reporting_date,
         lp.trust_id,
-        lp.current_bal AS current_balance,
+        lp.current_bal,
         lp.days_past_due,
         lp.delinquency_status,
-        lp.current_intr_rate AS current_interest_rate,
-        lp.begin_bal AS beginning_balance,
+        lp.current_intr_rate,
+        lp.begin_bal,
         -- Join to property metrics
         pm.property_id,
         pm.property_type_code,
@@ -56,7 +56,7 @@ risk_metrics AS (
         property_type_code,
         property_state,
         -- Current metrics
-        current_balance,
+        current_bal,
         loan_to_value_ratio,
         current_dscr,
         current_occupancy_pct,
@@ -144,7 +144,7 @@ aggregated_metrics AS (
         
         -- Portfolio metrics
         COUNT(*) AS loan_count,
-        SUM(current_balance) AS total_loan_amount,
+        SUM(current_bal) AS total_loan_amt,
         AVG(loan_to_value_ratio) AS avg_ltv,
         AVG(current_dscr) AS avg_dscr,
         AVG(current_occupancy_pct) AS avg_occupancy,
@@ -159,14 +159,14 @@ aggregated_metrics AS (
         AVG(risk_score) AS avg_risk_score,
         
         -- Risk stratification
-        SUM(CASE WHEN risk_score >= 8 THEN current_balance ELSE 0 END) AS high_risk_balance,
-        SUM(CASE WHEN risk_score >= 4 AND risk_score < 8 THEN current_balance ELSE 0 END) AS medium_risk_balance,
-        SUM(CASE WHEN risk_score < 4 THEN current_balance ELSE 0 END) AS low_risk_balance,
+        SUM(CASE WHEN risk_score >= 8 THEN current_bal ELSE 0 END) AS high_risk_bal,
+        SUM(CASE WHEN risk_score >= 4 AND risk_score < 8 THEN current_bal ELSE 0 END) AS medium_risk_bal,
+        SUM(CASE WHEN risk_score < 4 THEN current_bal ELSE 0 END) AS low_risk_bal,
         
         -- Calculate risk ratios
-        SUM(CASE WHEN risk_score >= 8 THEN current_balance ELSE 0 END) / NULLIF(SUM(current_balance), 0) AS high_risk_ratio,
-        SUM(CASE WHEN risk_score >= 4 AND risk_score < 8 THEN current_balance ELSE 0 END) / NULLIF(SUM(current_balance), 0) AS medium_risk_ratio,
-        SUM(CASE WHEN risk_score < 4 THEN current_balance ELSE 0 END) / NULLIF(SUM(current_balance), 0) AS low_risk_ratio
+        SUM(CASE WHEN risk_score >= 8 THEN current_bal ELSE 0 END) / NULLIF(SUM(current_bal), 0) AS high_risk_ratio,
+        SUM(CASE WHEN risk_score >= 4 AND risk_score < 8 THEN current_bal ELSE 0 END) / NULLIF(SUM(current_bal), 0) AS medium_risk_ratio,
+        SUM(CASE WHEN risk_score < 4 THEN current_bal ELSE 0 END) / NULLIF(SUM(current_bal), 0) AS low_risk_ratio
     FROM risk_metrics
     GROUP BY trust_id, property_type_code, property_state, reporting_date
 )
