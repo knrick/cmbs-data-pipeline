@@ -18,6 +18,7 @@ test.ipynb
 # DBT
 dbt/logs/
 dbt/target/
+dbt/dbt_packages/
 
 # Data and Metadata files
 data/
