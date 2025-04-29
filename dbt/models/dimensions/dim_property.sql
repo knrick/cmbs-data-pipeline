@@ -4,7 +4,7 @@
     post_hook = [
       "CREATE INDEX IF NOT EXISTS idx_{{ this.name }}_property_id ON {{ this }} (property_id)",
       "CREATE INDEX IF NOT EXISTS idx_{{ this.name }}_property_type ON {{ this }} (property_type_code)",
-      "CREATE INDEX IF NOT EXISTS idx_{{ this.name }}_property_state ON {{ this }} (property_state)",
+      "CREATE INDEX IF NOT EXISTS idx_{{ this.name }}_zip_id ON {{ this }} (zip_id)",
       "ANALYZE {{ this }}"
     ]
   )
@@ -14,11 +14,14 @@
 WITH latest_property AS (
     SELECT 
         p.*,
+        z.zip_id,
         ROW_NUMBER() OVER (
             PARTITION BY asset_num 
             ORDER BY reporting_period_end_date DESC
         ) AS recency_rank
     FROM {{ source('cmbs', 'properties') }} p
+    LEFT JOIN {{ ref('dim_geo_zip') }} z 
+      ON p.property_zip = z.zip_code
 )
 
 SELECT
@@ -28,10 +31,7 @@ SELECT
     -- Property details
     property_name,
     property_address,
-    property_city,
-    property_state,
-    property_zip,
-    property_county,
+    zip_id,
     
     -- Property characteristics
     property_type_code,
@@ -87,6 +87,7 @@ SELECT
     -- Metadata
     trust,
     company AS issuer,
+    reporting_period_end_date AS reporting_date,
     CURRENT_TIMESTAMP AS updated_at
 FROM latest_property
 WHERE recency_rank = 1 

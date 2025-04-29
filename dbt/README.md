@@ -17,7 +17,9 @@ models/
 │   ├── fct_loan_monthly_performance.sql
 │   ├── fct_property_metrics.sql
 │   └── fct_loan_modifications.sql
-├── marts/               # Business-specific aggregated models (to be added)
+├── marts/               # Business-specific aggregated models
+│   └── analytics/       # Analytics mart models
+├── metrics.yml          # Metric definitions for MetricFlow
 └── sources.yml          # Source definitions
 ```
 
@@ -36,20 +38,70 @@ models/
 2. **fct_property_metrics**: Performance metrics for each property over time.
 3. **fct_loan_modifications**: Records changes to loan terms such as interest rates and maturity dates.
 
+### Semantic Layer (MetricFlow)
+
+This project uses MetricFlow to define a semantic layer on top of the data model. Metrics are defined in the `metrics.yml` file, which includes:
+
+1. **Metrics**: Define business metrics used for analysis, including:
+   - **total_current_balance**: Total outstanding loan balance
+   - **total_delinquent_balance**: Total balance of delinquent loans
+   - **delinquency_rate**: Percentage of balance that is delinquent
+   - **average_occupancy**: Average property occupancy percentage
+   - **average_dscr**: Average debt service coverage ratio
+   - **total_loan_count**: Total number of loans
+   - **average_interest_rate**: Average interest rate across loans
+   - **total_property_count**: Total number of properties
+   - **average_valuation_change**: Average percentage change in property valuation
+
 ## Getting Started
 
 1. Set up your profile following the guidance in `profiles_guide.md`
 2. Install dependencies:
    ```
    dbt deps
+   pip install dbt-metricflow
    ```
 
-3. Build the models:
+3. Create DBT_PROFILES_DIR environment variable:
+   ```
+   export DBT_PROFILES_DIR=~/.dbt
+   ```
+
+4. Build the models:
    ```
    dbt build
    ```
 
-## Common Analyses
+4. Validate the semantic layer:
+   ```
+   mf validate-configs
+   ```
+
+5. List available metrics:
+   ```
+   mf list metrics
+   ```
+
+## Using the Semantic Layer
+
+The semantic layer provides a standardized way to query metrics. Here are some examples:
+
+### Query Total Current Balance Over Time
+```bash
+mf query --metrics total_current_balance --group-by metric_time
+```
+
+### Query Delinquency Rate by Loan Status
+```bash
+mf query --metrics delinquency_rate --group-by loan__loan_status
+```
+
+### Query Metrics with Filters
+```bash
+mf query --metrics total_current_balance --group-by metric_time --where "loan__days_past_due > 0"
+```
+
+## Common SQL Analyses
 
 Here are some common analyses you can perform with this data model:
 
@@ -128,8 +180,8 @@ ORDER BY modification_type
 
 ## Future Enhancements
 
-1. Add additional metrics and KPIs 
-2. Create visualization models for Lightdash
+1. Expand the semantic layer with additional metrics
+2. Create visualization models in Lightdash using MetricFlow metrics
 3. Add cross-trust aggregations for market analysis
 4. Implement additional data quality tests
 5. Prepare for migration to Snowflake
@@ -138,6 +190,7 @@ ORDER BY modification_type
 
 - Run daily/weekly incremental updates
 - Validate data quality after each update
+- Validate the semantic layer after schema changes
 - Document new metrics and analyses
 
 ## Contributors

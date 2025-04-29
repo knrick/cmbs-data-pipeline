@@ -46,6 +46,40 @@ To test that your connection works, run:
 dbt debug
 ```
 
+## MetricFlow Configuration
+
+This project uses MetricFlow to create a semantic layer on top of the dbt models. MetricFlow requires:
+
+1. Installing the package:
+   ```bash
+   pip install dbt-metricflow
+   ```
+
+2. Metrics defined in the `models/metrics.yml` file:
+   ```yaml
+   version: 2
+   
+   metrics:
+     - name: total_current_balance
+       type: SIMPLE
+       type_params:
+         measure: current_balance
+       label: "Total Current Balance"
+       # ... more configuration ...
+   ```
+
+3. Running with the same dbt profile:
+   ```bash
+   # To list metrics
+   mf list metrics
+
+   # To validate the semantic layer configuration
+   mf validate-configs
+
+   # To query metrics
+   mf query --metrics total_current_balance --group-by metric_time
+   ```
+
 ## Snowflake Migration (Future)
 
 When you're ready to migrate to Snowflake, add a new target to your profile:
@@ -74,4 +108,10 @@ To use the Snowflake target, you would run:
 
 ```bash
 dbt run --target snowflake
+```
+
+The same profile will be used by MetricFlow:
+
+```bash
+mf --profile cmbs_analytics --target snowflake list metrics
 ``` 

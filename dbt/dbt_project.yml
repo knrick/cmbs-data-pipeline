@@ -33,9 +33,3 @@ models:
     marts:
       +materialized: table
       +schema: mart
-      
-    utils:
-      +materialized: ephemeral
-      
-    staging:
-      +materialized: view 

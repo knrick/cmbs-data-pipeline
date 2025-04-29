@@ -14,8 +14,15 @@
     )
 }}
 
+/*
+ * Loan Risk Metrics Model
+ * 
+ * This model analyzes loan risk factors by joining loan data with property metrics 
+ * and properly navigating the snowflake schema to access geographic information.
+ */
 WITH loan_and_property_data AS (
     SELECT
+        -- Loan metrics
         lp.loan_id,
         lp.reporting_date,
         lp.trust_id,
@@ -24,27 +31,34 @@ WITH loan_and_property_data AS (
         lp.delinquency_status,
         lp.current_intr_rate,
         lp.begin_bal,
-        -- Join to property metrics
+        
+        -- Property metrics
         pm.property_id,
         pm.property_type_code,
         pm.current_dscr,
         pm.current_occupancy_pct,
         pm.valuation_change_pct,
+        
+        -- Geography via properly joined snowflake schema
+        s.state_code AS property_state,
+        
         -- Calculate LTV (loan-to-value ratio) where we have property valuation data
         CASE 
             WHEN pm.current_valuation > 0 THEN lp.current_bal / pm.current_valuation
             ELSE NULL
         END AS loan_to_value_ratio,
-        -- Get property state
-        dp.property_state,
+        
         -- Calculate month-over-month changes
         lp.current_bal - lp.begin_bal AS loan_amount_change
     FROM {{ ref('fct_loan_monthly_performance') }} lp
     LEFT JOIN {{ ref('fct_property_metrics') }} pm 
         ON lp.loan_id = pm.property_id 
         AND lp.reporting_date = pm.reporting_date
-    LEFT JOIN {{ ref('dim_property') }} dp 
-        ON lp.loan_id = dp.property_id
+    -- Join to property and geographic dimensions through snowflake hierarchy
+    LEFT JOIN {{ ref('dim_property') }} dp ON lp.loan_id = dp.property_id
+    LEFT JOIN {{ ref('dim_geo_zip') }} z ON dp.zip_id = z.zip_id
+    LEFT JOIN {{ ref('dim_geo_city') }} c ON z.city_id = c.city_id
+    LEFT JOIN {{ ref('dim_geo_state') }} s ON c.state_id = s.state_id
 ),
 
 risk_metrics AS (

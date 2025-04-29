@@ -11,7 +11,7 @@
 }}
 
 WITH loan_monthly_data AS (
-    SELECT
+    SELECT DISTINCT ON (asset_num, reporting_period_end_date)
         asset_num AS loan_id,
         reporting_period_end_date AS reporting_date,
         trust AS trust_id,

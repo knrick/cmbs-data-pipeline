@@ -54,26 +54,74 @@ models:
         tests:
           - accepted_values:
               values: ['Retail', 'Office', 'Multifamily', 'Industrial', 'Healthcare', 'Lodging/Hotel', 'Mixed Use', 'Self Storage', 'Warehouse', 'Mobile Home', 'Other']
-      - name: property_state
-        description: "State where the property is located"
+      - name: zip_id
+        description: "Foreign key to dim_geo_zip dimension"
+        tests:
+          - relationships:
+              to: ref('dim_geo_zip')
+              field: zip_id
 
-  - name: dim_geography
-    description: "Geography dimension with standardized location data"
+  - name: dim_geo_state
+    description: "State dimension with region and division classifications"
     columns:
-      - name: geo_id
-        description: "Surrogate key for the geography"
+      - name: state_id
+        description: "Primary key for the state"
         tests:
           - unique
           - not_null
-      - name: state
-        description: "Property state"
+      - name: state_code
+        description: "Two-letter state code"
         tests:
-          - dbt_expectations.expect_column_values_to_match_regex:
-              regex: '^[A-Z]{2}$'
-      - name: region
-        description: "Geographic region classification"
-      - name: division
-        description: "Census Bureau division classification"
+          - unique
+          - not_null
+      - name: state_name
+        description: "Full name of the state"
+        tests:
+          - not_null
+      - name: region_name
+        description: "Name of the geographic region (Northeast, Midwest, South, West, Other)"
+      - name: division_name
+        description: "Name of the geographic division within region"
+
+  - name: dim_geo_city
+    description: "City dimension with reference to state dimension"
+    columns:
+      - name: city_id
+        description: "Primary key for the city"
+        tests:
+          - unique
+          - not_null
+      - name: city_name
+        description: "Name of the city"
+        tests:
+          - not_null
+      - name: state_id
+        description: "Foreign key to state dimension"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_geo_state')
+              field: state_id
+
+  - name: dim_geo_zip
+    description: "ZIP code dimension with reference to city dimension"
+    columns:
+      - name: zip_id
+        description: "Primary key for the ZIP code"
+        tests:
+          - unique
+          - not_null
+      - name: zip_code
+        description: "5-digit ZIP code"
+        tests:
+          - not_null
+      - name: city_id
+        description: "Foreign key to city dimension"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_geo_city')
+              field: city_id
 
   - name: fct_loan_monthly_performance
     description: "Fact table for monthly loan performance"
@@ -127,6 +175,12 @@ models:
               max_value: 0.10
       - name: maturity_date
         description: "Date when the loan matures"
+      - name: origination_date
+        description: "Date when the loan was originated"
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: "'1980-01-01'"
+              max_value: "CURRENT_DATE"
       - name: source_file
         description: "Source file from which the data was extracted"
 
@@ -213,7 +267,192 @@ models:
               inclusive: true
     tests:
       - dbt_utils.unique_combination_of_columns:
-          combination_of_columns: ["trust_id", "property_type_code", "property_state", "reporting_date"] 
+          combination_of_columns: ["trust_id", "property_type_code", "property_state", "reporting_date"]
+
+  - name: portfolio_concentration
+    description: >
+      Analysis of loan portfolio concentration across different dimensions including property type,
+      geography, loan size, interest rate, and remaining term.
+    columns:
+      - name: reporting_date
+        description: The date of the reporting period
+        tests:
+          - not_null
+      
+      - name: concentration_type
+        description: The type of concentration analysis (Property Type, State, Region, Loan Size, Interest Rate, Remaining Term)
+        tests:
+          - not_null
+      
+      - name: concentration_category
+        description: The specific category within the concentration type
+        tests:
+          - not_null
+      
+      - name: loan_count
+        description: The number of loans in this category
+      
+      - name: total_balance
+        description: The total loan balance in this category
+      
+      - name: pct_of_loans
+        description: Percentage of total loans that this category represents
+      
+      - name: pct_of_balance
+        description: Percentage of total loan balance that this category represents
+      
+      - name: rank_by_balance
+        description: Ranking of this category within its concentration type by balance
+      
+      - name: is_top_5
+        description: Boolean flag indicating if this category is in the top 5 by balance
+
+  - name: vintage_performance
+    description: >
+      Analysis of loan performance by origination vintage/year, tracking performance metrics
+      at the same loan age across different vintages.
+    columns:
+      - name: reporting_date
+        description: The date of the reporting period
+        tests:
+          - not_null
+      
+      - name: vintage_year
+        description: The year the loans were originated
+        tests:
+          - not_null
+      
+      - name: vintage_age_months
+        description: The number of months since the vintage year
+      
+      - name: loan_count
+        description: The number of loans in this vintage
+      
+      - name: total_balance
+        description: The total loan balance of this vintage
+      
+      - name: delinquency_rate
+        description: The percentage of loan balance that is delinquent
+      
+      - name: severe_delinquency_rate
+        description: The percentage of loan balance that is 90+ days delinquent
+      
+      - name: avg_delinquency_at_age
+        description: The average delinquency rate for all vintages at this same loan age
+      
+      - name: delinquency_vs_avg_at_age
+        description: The difference between this vintage's delinquency rate and the average rate at this age
+      
+      - name: delinquency_percentile_at_age
+        description: The percentile rank of this vintage's delinquency rate among all vintages at this age
+      
+      - name: vintage_performance_category
+        description: Categorical assessment of vintage performance (Top Performer, Above Average, Below Average, Underperformer)
+      
+      - name: short_term_trend
+        description: Categorical assessment of delinquency trend (Improving, Stable, Deteriorating)
+
+  - name: property_performance_metrics
+    description: >
+      Enhanced property performance analysis with benchmarking against similar properties,
+      trend analysis, and risk scoring.
+    columns:
+      - name: property_id
+        description: Unique identifier for the property
+        tests:
+          - not_null
+      
+      - name: reporting_date
+        description: The date of the reporting period
+        tests:
+          - not_null
+      
+      - name: current_occupancy_pct
+        description: The current occupancy percentage of the property
+      
+      - name: current_dscr
+        description: The current debt service coverage ratio
+      
+      - name: loan_to_value_ratio
+        description: The ratio of loan balance to property value
+      
+      - name: value_per_sq_ft
+        description: Property value per square foot
+      
+      - name: noi_per_sq_ft
+        description: Net operating income per square foot
+      
+      - name: expense_ratio
+        description: The ratio of expenses to revenue
+      
+      - name: occupancy_change_pct
+        description: Change in occupancy percentage since securitization
+      
+      - name: occupancy_3m_change
+        description: 3-month change in occupancy percentage
+      
+      - name: noi_3m_change
+        description: 3-month change in net operating income
+      
+      - name: type_avg_occupancy_pct
+        description: Average occupancy percentage for this property type
+      
+      - name: state_avg_occupancy_pct
+        description: Average occupancy percentage for properties in this state
+      
+      - name: occupancy_vs_type
+        description: How this property's occupancy compares to the average for its type
+      
+      - name: dscr_vs_type
+        description: How this property's DSCR compares to the average for its type
+      
+      - name: performance_category
+        description: Overall performance category (Strong Performer, Stable Performer, Underperformer, Distressed)
+      
+      - name: occupancy_trend
+        description: Trend in occupancy (Improving, Stable, Declining)
+      
+      - name: noi_trend
+        description: Trend in net operating income (Improving, Stable, Declining)
+      
+      - name: property_risk_score
+        description: Composite risk score (0-10, lower is better)
+
+  - name: loan_aging_metrics
+    description: "Detailed analysis of loan aging, prepayment speeds, and remaining term metrics"
+    columns:
+      - name: loan_id
+        description: "Unique identifier for the loan"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('fct_loan_monthly_performance')
+              field: loan_id
+      
+      - name: psa_speed
+        description: "Public Securities Association prepayment speed"
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1000
+              
+  - name: property_occupancy_noi
+    description: "Detailed property occupancy trends and NOI analysis"
+    columns:
+      - name: property_id
+        description: "Unique identifier for the property"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_property')
+              field: property_id
+              
+      - name: current_occupancy
+        description: "Current occupancy percentage"
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100
 
 semantic_models:
   - name: loans
@@ -282,7 +521,7 @@ semantic_models:
 
   - name: properties
     description: "Property metrics from CMBS trusts"
-    model: ref('fct_property_metrics')
+    model: ref('property_occupancy_noi')
     defaults:
       agg_time_dimension: reporting_date
     
@@ -304,6 +543,14 @@ semantic_models:
       - name: property_type_code
         type: categorical
         expr: property_type_code
+      
+      - name: state
+        type: categorical
+        expr: state
+      
+      - name: region
+        type: categorical
+        expr: region
     
     measures:
       - name: current_valuation
@@ -329,4 +576,177 @@ semantic_models:
       - name: valuation_change_pct
         description: "Percentage change in property valuation"
         expr: valuation_change_pct
+        agg: average
+        
+      - name: current_noi
+        description: "Current net operating income"
+        expr: current_noi
+        agg: sum
+      
+      - name: net_rentable_square_feet_number
+        description: "Net rentable square feet"
+        expr: net_rentable_square_feet_number
+        agg: sum
+      
+      - name: current_occupancy_weighted
+        description: "Occupancy weighted by square feet"
+        expr: current_occupancy * net_rentable_square_feet_number
+        agg: sum
+
+  - name: portfolio_concentration
+    description: "Analysis of loan portfolio concentration across different dimensions"
+    model: ref('portfolio_concentration')
+    defaults:
+      agg_time_dimension: reporting_date
+    
+    entities:
+      - name: concentration_category
+        type: primary
+        expr: concentration_category
+    
+    dimensions:
+      - name: reporting_date
+        type: time
+        type_params:
+          time_granularity: day
+      
+      - name: concentration_type
+        type: categorical
+        expr: concentration_type
+    
+    measures:
+      - name: concentration_loan_count
+        description: "Number of loans in a concentration category"
+        expr: loan_count
+        agg: sum
+      
+      - name: concentration_balance
+        description: "Total loan balance in a concentration category"
+        expr: total_balance
+        agg: sum
+      
+      - name: pct_of_balance
+        description: "Percentage of total balance in a concentration category"
+        expr: pct_of_balance
+        agg: max
+      
+      - name: max_property_type_pct
+        description: "Maximum concentration percentage for property types"
+        expr: "CASE WHEN concentration_type = 'Property Type' THEN pct_of_balance ELSE 0 END"
+        agg: max
+      
+      - name: max_state_pct
+        description: "Maximum concentration percentage for states"
+        expr: "CASE WHEN concentration_type = 'State' THEN pct_of_balance ELSE 0 END"
+        agg: max
+      
+      - name: herfindahl_property_types
+        description: "Herfindahl index for property type concentration"
+        expr: "CASE WHEN concentration_type = 'Property Type' THEN pct_of_balance * pct_of_balance ELSE 0 END"
+        agg: sum
+
+  - name: vintage_performance
+    description: "Analysis of loan performance by origination vintage"
+    model: ref('vintage_performance')
+    defaults:
+      agg_time_dimension: reporting_date
+    
+    entities:
+      - name: vintage
+        type: primary
+        expr: vintage_year
+    
+    dimensions:
+      - name: reporting_date
+        type: time
+        type_params:
+          time_granularity: day
+      
+      - name: vintage_year
+        type: categorical
+        expr: vintage_year
+      
+      - name: vintage_age_months
+        type: categorical
+        expr: vintage_age_months
+    
+    measures:
+      - name: min_vintage_delinquency
+        description: "Minimum delinquency rate among vintages"
+        expr: delinquency_rate
+        agg: min
+      
+      - name: max_vintage_delinquency
+        description: "Maximum delinquency rate among vintages"
+        expr: delinquency_rate
+        agg: max
+      
+      - name: vintage_delinquency_diff
+        description: "Spread between worst and best vintage delinquency rates"
+        expr: "delinquency_rate - AVG(delinquency_rate) OVER(PARTITION BY reporting_date)"
+        agg: max
+      
+      - name: vintage_loan_count
+        description: "Number of loans in a vintage"
+        expr: loan_count
+        agg: sum
+      
+      - name: vintage_balance
+        description: "Total loan balance in a vintage"
+        expr: total_balance
+        agg: sum
+
+  - name: property_analytics
+    description: "Enhanced property performance analysis with benchmarking"
+    model: ref('property_performance_metrics')
+    defaults:
+      agg_time_dimension: analytics_date
+    
+    entities:
+      - name: property_analytics
+        type: primary
+        expr: property_id
+    
+    dimensions:
+      - name: analytics_date
+        type: time
+        expr: reporting_date
+        type_params:
+          time_granularity: day
+      
+      - name: analytics_property_type
+        type: categorical
+        expr: property_type_code
+      
+      - name: performance_category
+        type: categorical
+        expr: performance_category
+      
+      - name: occupancy_trend
+        type: categorical
+        expr: occupancy_trend
+      
+      - name: noi_trend
+        type: categorical
+        expr: noi_trend
+    
+    measures:
+      - name: distressed_property_pct
+        description: "Percentage of properties categorized as distressed"
+        expr: "CASE WHEN performance_category = 'Distressed' THEN 1 ELSE 0 END"
+        agg: average
+      
+      - name: avg_property_risk
+        description: "Average property risk score"
+        expr: property_risk_score
+        agg: average
+      
+      - name: declining_occupancy_pct
+        description: "Percentage of properties with declining occupancy"
+        expr: "CASE WHEN occupancy_trend = 'Declining' THEN 1 ELSE 0 END"
+        agg: average
+      
+      - name: avg_noi_growth
+        description: "Average NOI growth rate"
+        expr: "CASE WHEN noi_3m_change IS NOT NULL AND current_noi > 0 THEN noi_3m_change / NULLIF(current_noi - noi_3m_change, 0) ELSE 0 END"
         agg: average 

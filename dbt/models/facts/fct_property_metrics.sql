@@ -1,7 +1,7 @@
 {{
   config(
     materialized = 'incremental',
-    unique_key = ['property_id', 'reporting_date', 'trust_id', 'source_file'],
+    unique_key = ['property_id', 'reporting_date', 'trust_id'],
     partition_by = {
       "field": "reporting_date",
       "data_type": "date",
@@ -16,15 +16,10 @@
 }}
 
 WITH property_data AS (
-    SELECT
+    SELECT DISTINCT ON (asset_num, reporting_period_end_date)
         p.asset_num AS property_id,
         p.reporting_period_end_date AS reporting_date,
         p.trust AS trust_id,
-        
-        -- Location info for joining to geography dimension
-        p.property_state,
-        p.property_city,
-        p.property_zip,
         
         -- Property characteristics
         p.property_type_code,
@@ -54,8 +49,7 @@ WITH property_data AS (
         p.property_status_code,
         
         -- Metadata
-        p.company AS issuer,
-        p.source_file
+        p.company AS issuer
     FROM {{ source('cmbs', 'properties') }} p
     WHERE p.reporting_period_end_date IS NOT NULL
     
@@ -65,27 +59,16 @@ WITH property_data AS (
         SELECT COALESCE(MAX(reporting_date), '2000-01-01'::date) FROM {{ this }}
       )
     {% endif %}
-),
-
--- Get geography ID
-geo_data AS (
-    SELECT
-        geo_id,
-        state,
-        city,
-        zip_code
-    FROM {{ ref('dim_geography') }}
 )
 
 SELECT
     -- Generate surrogate key using dbt_utils
-    {{ dbt_utils.generate_surrogate_key(['pd.property_id', 'pd.reporting_date', 'pd.trust_id', 'pd.source_file']) }} AS property_metric_id,
+    {{ dbt_utils.generate_surrogate_key(['pd.property_id', 'pd.reporting_date', 'pd.trust_id']) }} AS property_metric_id,
     
     -- Foreign keys for dimension tables
     pd.property_id,
     pd.reporting_date,
     pd.trust_id,
-    gd.geo_id,
     
     -- Property characteristics
     pd.property_type_code,
@@ -138,13 +121,6 @@ SELECT
     -- Status
     pd.property_status_code,
     
-    -- Source file for tracking
-    pd.source_file,
-    
     -- Timestamp
     CURRENT_TIMESTAMP AS loaded_at
-FROM property_data pd
-LEFT JOIN geo_data gd ON 
-    pd.property_state = gd.state AND
-    pd.property_city = gd.city AND
-    pd.property_zip = gd.zip_code 
+FROM property_data pd 

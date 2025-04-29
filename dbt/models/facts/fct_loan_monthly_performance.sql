@@ -1,7 +1,7 @@
 {{
   config(
     materialized = 'incremental',
-    unique_key = ['loan_id', 'reporting_date', 'trust_id', 'source_file'],
+    unique_key = ['loan_id', 'reporting_date', 'trust_id'],
     partition_by = {
       "field": "reporting_date",
       "data_type": "date",
@@ -17,7 +17,7 @@
 }}
 
 WITH loan_monthly_data AS (
-    SELECT
+    SELECT DISTINCT ON (asset_num, reporting_period_end_date)
         l.asset_num AS loan_id,
         l.reporting_period_end_date AS reporting_date,
         l.trust AS trust_id,
@@ -58,11 +58,11 @@ WITH loan_monthly_data AS (
         
         -- Dates
         l.maturity_date,
+        l.origination_date,
         
         -- Metadata
         l.company AS issuer,
-        l.trust AS trust_name,
-        l.source_file
+        l.trust AS trust_name
     FROM {{ source('cmbs', 'loans') }} l
     WHERE l.reporting_period_end_date IS NOT NULL
     
@@ -76,7 +76,7 @@ WITH loan_monthly_data AS (
 
 SELECT
     -- Generate surrogate key using dbt_utils
-    {{ dbt_utils.generate_surrogate_key(['loan_id', 'reporting_date', 'trust_id', 'source_file']) }} AS performance_id,
+    {{ dbt_utils.generate_surrogate_key(['loan_id', 'reporting_date', 'trust_id']) }} AS performance_id,
     
     -- Foreign keys for dimension tables
     loan_id,
@@ -126,9 +126,7 @@ SELECT
     
     -- Important dates
     maturity_date,
-    
-    -- Source file for tracking
-    source_file,
+    origination_date,
     
     -- Delinquent amount calculation
     CASE 

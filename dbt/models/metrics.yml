@@ -81,4 +81,144 @@ metrics:
     label: "Average Valuation Change %"
     description: "The average percentage change in property valuation from securitization"
     meta:
-      format: percentage 
+      format: percentage
+
+  # New Portfolio Concentration Metrics
+  - name: top_property_type_concentration
+    type: SIMPLE
+    type_params:
+      measure: max_property_type_pct
+    label: "Top Property Type Concentration"
+    description: "The percentage of total balance in the largest property type"
+    meta:
+      format: percentage
+
+  - name: top_state_concentration
+    type: SIMPLE
+    type_params:
+      measure: max_state_pct
+    label: "Top State Concentration"
+    description: "The percentage of total balance in the largest state"
+    meta:
+      format: percentage
+
+  - name: herfindahl_index
+    type: SIMPLE
+    type_params:
+      measure: herfindahl_property_types
+    label: "Property Type Concentration Index"
+    description: "Herfindahl index for property type concentration (higher values indicate more concentration)"
+    meta:
+      format: decimal
+
+  # New Vintage Performance Metrics
+  - name: best_vintage_delinquency
+    type: SIMPLE
+    type_params:
+      measure: min_vintage_delinquency
+    label: "Best Vintage Delinquency Rate"
+    description: "The delinquency rate of the best performing vintage"
+    meta:
+      format: percentage
+
+  - name: worst_vintage_delinquency
+    type: SIMPLE
+    type_params:
+      measure: max_vintage_delinquency
+    label: "Worst Vintage Delinquency Rate"
+    description: "The delinquency rate of the worst performing vintage"
+    meta:
+      format: percentage
+
+  - name: vintage_delinquency_spread
+    type: SIMPLE
+    type_params:
+      measure: vintage_delinquency_diff
+    label: "Vintage Delinquency Spread"
+    description: "The difference between worst and best vintage delinquency rates"
+    meta:
+      format: percentage
+
+  # New Property Performance Metrics
+  - name: distressed_properties_pct
+    type: SIMPLE
+    type_params:
+      measure: distressed_property_pct
+    label: "Distressed Properties Percentage"
+    description: "The percentage of properties categorized as distressed"
+    meta:
+      format: percentage
+
+  - name: average_property_risk_score
+    type: SIMPLE
+    type_params:
+      measure: avg_property_risk
+    label: "Average Property Risk Score"
+    description: "The average risk score across all properties (lower is better)"
+    meta:
+      format: decimal
+
+  - name: declining_occupancy_properties_pct
+    type: SIMPLE
+    type_params:
+      measure: declining_occupancy_pct
+    label: "Properties with Declining Occupancy"
+    description: "The percentage of properties with declining occupancy trends"
+    meta:
+      format: percentage
+
+  - name: noi_growth_rate
+    type: SIMPLE
+    type_params:
+      measure: avg_noi_growth
+    label: "Average NOI Growth Rate"
+    description: "The average growth rate of NOI across properties"
+    meta:
+      format: percentage
+
+  - name: total_occupancy_weighted
+    type: SIMPLE
+    type_params:
+      measure: current_occupancy_weighted
+    label: "Total Weighted Occupancy"
+    description: "Sum of occupancy weighted by net rentable square feet"
+    meta:
+      format: number
+
+  - name: total_square_feet
+    type: SIMPLE
+    type_params:
+      measure: net_rentable_square_feet_number
+    label: "Total Net Rentable Square Feet"
+    description: "Total net rentable square feet"
+    meta:
+      format: number
+
+  - name: total_noi
+    type: SIMPLE
+    type_params:
+      measure: current_noi
+    label: "Total NOI"
+    description: "Total net operating income"
+    meta:
+      format: currency
+
+  - name: weighted_average_occupancy
+    type: ratio
+    type_params:
+      numerator: total_occupancy_weighted
+      denominator: total_square_feet
+    label: "Weighted Average Occupancy"
+    description: "Weighted average occupancy by net rentable square feet"
+    meta:
+      format: percentage
+
+  - name: weighted_average_noi_per_sqft
+    type: ratio
+    type_params:
+      numerator: total_noi
+      denominator: total_square_feet
+    label: "Weighted Average NOI per Square Foot"
+    description: "Weighted average NOI per square foot"
+    meta:
+      format: currency 
