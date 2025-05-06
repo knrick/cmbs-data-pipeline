@@ -2,7 +2,10 @@ import os
 import json
 
 # Load CMBS companies from JSON
-with open('companies.json', 'r') as f:
+# Get the directory where this config file is located
+current_dir = os.path.dirname(os.path.abspath(__file__))
+# Load companies from JSON relative to this file's location
+with open(os.path.join(current_dir, 'companies.json'), 'r') as f:
     COMPANY_NAMES = json.load(f)
 
 # Data storage configuration

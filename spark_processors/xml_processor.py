@@ -1,4 +1,5 @@
 import os
+import glob
 import json
 from datetime import datetime
 from pyspark.sql import SparkSession, functions as F
@@ -113,8 +114,9 @@ class XMLProcessor:
             logger.info(f"\nProcessing trust: {company_name} - {trust_name}")
             
             # Get XML files in this trust folder
-            xml_files = [f for f in os.listdir(trust_path) if f.endswith('.xml')]
-            if not xml_files:
+            xml_files_pattern = os.path.join(trust_path, "102", "*.xml")
+            n_xml_files = len(glob.glob(xml_files_pattern))
+            if n_xml_files == 0:
                 logger.info(f"No XML files found in trust folder: {trust_path}")
                 continue
 
@@ -126,7 +128,19 @@ class XMLProcessor:
                     .option("rootTag", "assetData") \
                     .option("inferSchema", "false") \
                     .option("recursiveFileLookup", "true") \
-                    .load(os.path.join(trust_path, "*.xml"))
+                    .load(xml_files_pattern)
+                
+                # Split assetNumber into base assetNumber and propertyNumber
+                df = df.withColumn(
+                    "propertyNumber",
+                    F.lpad(F.regexp_extract(F.col("assetNumber"), "[-\\.](\\d{1,3})$", 1), 3, "0")  # Extract the XXX part
+                # ).withColumn(
+                #     "assetNumberOriginal",
+                #     F.col("assetNumber")
+                ).withColumn(
+                    "assetNumber",
+                    F.regexp_replace(F.col("assetNumber"), "[-\\.](\\d{1,3})$", "")  # Remove the XXX part
+                )
                 
                 # Add company, trust, and source file columns
                 df = df.withColumn("company", F.lit(company_name)) \
@@ -141,6 +155,7 @@ class XMLProcessor:
                 if df.select("property.*").columns:  # Check if property exists and has fields
                     properties_df = df.select(
                         "assetNumber",
+                        "propertyNumber",
                         "assetTypeNumber",
                         "assetAddedIndicator",
                         "reportingPeriodEndDate",
@@ -175,8 +190,8 @@ class XMLProcessor:
                     )
                 
                 # Create loans dataframe
-                loans_df = df.where(F.col("reportingPeriodEndDate").isNotNull()) \
-                            .drop("property")
+                loans_df = df.where(F.col("propertyNumber") == "000") \
+                            .drop("property", "propertyNumber")
 
                 # Check for existing records in parquet files and remove duplicates
                 loans_output_path = os.path.join(
@@ -351,8 +366,8 @@ class XMLProcessor:
                     "company": company_name,
                     "trust": trust_name,
                     "processing_timestamp": datetime.now().isoformat(),
-                    "files_processed": len(xml_files),
-                    "files_succeeded": len(xml_files),  # All files processed together
+                    "files_processed": n_xml_files,
+                    "files_succeeded": n_xml_files,  # All files processed together
                     "files_failed": 0,
                     "total_loans": loans_df.count() if loans_df is not None else 0,
                     "total_properties": properties_df.count() if properties_df is not None else 0,
@@ -386,9 +401,9 @@ class XMLProcessor:
                     "company": company_name,
                     "trust": trust_name,
                     "processing_timestamp": datetime.now().isoformat(),
-                    "files_processed": len(xml_files),
+                    "files_processed": n_xml_files,
                     "files_succeeded": 0,
-                    "files_failed": len(xml_files),
+                    "files_failed": n_xml_files,
                     "error": error_msg
                 }
                 all_audit_logs.append(error_summary)

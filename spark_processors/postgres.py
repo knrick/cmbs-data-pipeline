@@ -164,9 +164,10 @@ def schema_to_sql(schema: Dict[str, Any], table_name: str, add_drop: bool = Fals
         sql_parts.append(f"\n-- Add index for company and trust")
         sql_parts.append(f"CREATE INDEX idx_{table_name}_company_trust ON {table_name}(company, trust);")
     
-    if 'reportingPeriodEndDate' in schema['columns']:
-        sql_parts.append(f"\n-- Add index for reporting date")
-        sql_parts.append(f"CREATE INDEX idx_{table_name}_reporting_date ON {table_name}(reporting_period_end_date);")
+    # Add index for assetNumber and propertyNumber
+    if 'assetNumber' in schema['columns'] and 'propertyNumber' in schema['columns']:
+        sql_parts.append(f"\n-- Add index for asset_num and property_num")
+        sql_parts.append(f"CREATE INDEX idx_{table_name}_asset_property ON {table_name}(asset_num, property_num);")
     
     return '\n'.join(sql_parts)
 

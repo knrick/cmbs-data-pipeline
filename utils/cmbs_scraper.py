@@ -55,7 +55,8 @@ class CMBSScraper:
         self.count = 100  # Number of results per page
         self.request_count = 0
         self.time_until = time_until
-        self.accepted_filings = ["10-D", "ABS-EE", "EX-102"]
+        self.accepted_filings = ["10-D", "ABS-EE", "EX-102", "EX-103"]
+        self.exhibits_to_collect = ["102", "103"]
         
         # Table column definitions
         self.search_table_cols = ["CIK", "Company", "State/Country"]
@@ -317,7 +318,7 @@ class CMBSScraper:
 
     def prep_exhibit_urls(self):
         self.check_stop()
-        exhibit_files = pd.DataFrame(columns=["URL", "File", "Trust", "Filing Date"])
+        exhibit_files = pd.DataFrame(columns=["URL", "File", "Trust", "Exhibit", "Filing Date"])
         for i, row in enumerate(self.filing_table):
             form_url = (
                 "https://www.sec.gov"
@@ -327,41 +328,41 @@ class CMBSScraper:
                 ].find("a")
                  .get("href")
             )
-            if form_url.endswith(".xml"):
-                hrefs = [form_url]
-                form_soup = None
-            else:
-                hrefs = None
-                form_soup = self.get_soup(form_url)
-
+            
             data_folder = DATA_STORAGE
             company_folder = os.path.join(data_folder, self.company_name)
-            search_folder = os.path.join(company_folder, self.filing_table_text.iloc[i]["Company"])
-            os.makedirs(search_folder, exist_ok=True)
+            trust_folder = os.path.join(company_folder, self.filing_table_text.iloc[i]["Company"])
+            
+            for exhibit in self.exhibits_to_collect:
+                exhibit_folder = os.path.join(trust_folder, exhibit)
+                os.makedirs(exhibit_folder, exist_ok=True)
 
-            exhibit = "102"
-            check_a = (
-                lambda a: 
-                (
-                    "exhibit" in a.text.lower()
-                    and exhibit in a.text.lower()
-                    or
-                    a.get("href")
-                    and
-                    f"ex{exhibit}" in a.get("href").lower()
+                # Define exhibit-specific check function
+                check_a = (
+                    lambda a: 
+                    (
+                        "exhibit" in a.text.lower()
+                        and exhibit in a.text
+                        or
+                        a.get("href") == f"exh_{exhibit}.xml"
+                    )
+                    and a.get("href").endswith(".xml")
                 )
-                and a.get("href").endswith(".xml")
-            )
-            if hrefs is None:
-                hrefs = [a.get("href") for a in form_soup.find_all("a") if check_a(a)]
+                
+                if form_url.endswith(".xml"):
+                    exhibit_hrefs = [form_url] if form_url.endswith(f"exh_{exhibit}.xml") else []
+                else:
+                    form_soup = self.get_soup(form_url)
+                    exhibit_hrefs = [a.get("href") for a in form_soup.find_all("a") if check_a(a)]
 
-            for href in hrefs:
-                if "/" not in href:
-                    href = form_url.rsplit("/", 1)[0] + "/" + href.rsplit("/", 1)[-1]
-                f = search_folder+ "\\" + href.split("/")[-2] + "_" + href.split("/")[-1]
-                exhibit_files.loc[len(exhibit_files)] = [
-                    href, f, self.filing_table_text.iloc[i]["Company"], self.filing_table_text.iloc[i]["Filing Date"]
-                ]
+                for href in exhibit_hrefs:
+                    if "/" not in href:
+                        href = form_url.rsplit("/", 1)[0] + "/" + href.rsplit("/", 1)[-1]
+                    f = os.path.join(exhibit_folder, href.split("/")[-2] + "_" + href.split("/")[-1])
+                    exhibit_files.loc[len(exhibit_files)] = [
+                        href, f, self.filing_table_text.iloc[i]["Company"], 
+                        exhibit, self.filing_table_text.iloc[i]["Filing Date"]
+                    ]
                 
         return self.filter_exhibit_urls(exhibit_files)
 
@@ -425,13 +426,26 @@ class CMBSScraper:
         
         # Clean up empty folders
         if os.path.exists(os.path.join(DATA_STORAGE, self.company_name)):
-            for folder in os.listdir(os.path.join(DATA_STORAGE, self.company_name)):
-                try:
-                    folder_path = os.path.join(DATA_STORAGE, self.company_name, folder)
-                    if len(os.listdir(folder_path)) == 0:
-                        os.rmdir(folder_path)
-                except:
-                    pass
+            for trust_folder in os.listdir(os.path.join(DATA_STORAGE, self.company_name)):
+                trust_path = os.path.join(DATA_STORAGE, self.company_name, trust_folder)
+                if not os.path.isdir(trust_path):
+                    continue
+                    
+                # Clean up empty exhibit folders
+                for exhibit_folder in os.listdir(trust_path):
+                    exhibit_path = os.path.join(trust_path, exhibit_folder)
+                    if os.path.isdir(exhibit_path) and len(os.listdir(exhibit_path)) == 0:
+                        try:
+                            os.rmdir(exhibit_path)
+                        except:
+                            pass
+                
+                # Clean up empty trust folders
+                if len(os.listdir(trust_path)) == 0:
+                    try:
+                        os.rmdir(trust_path)
+                    except:
+                        pass
 
     def scrape_company(
         self,

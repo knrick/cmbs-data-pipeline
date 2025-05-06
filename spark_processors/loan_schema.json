@@ -32,7 +32,7 @@
             "type": "string",
             "nullable": false,
             "description": "Source file name",
-            "size": 208,
+            "size": 220,
             "allow_control_chars": false
         },
         "reportingPeriodBeginningDate": {

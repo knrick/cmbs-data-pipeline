@@ -283,14 +283,14 @@ class SchemaManager:
         errors = set()
         
         for field_name, field_spec in field_specs.items():
-            if field_name not in columns_to_validate:
-                if not field_spec["schema"]["nullable"]: # if the field is not nullable, it must be in the df
-                    errors.add(f"Non-nullable field {field_name} is missing in DataFrame")
-                continue
             validation_table = field_spec["table"]
             spec = field_spec["schema"]
             field_type = spec["type"]
-            nullable = spec.get("nullable", True)
+            nullable = spec["nullable"]
+            if field_name not in columns_to_validate:
+                if not nullable: # if the field is not nullable, it must be in the df
+                    errors.add(f"Non-nullable field {field_name} is missing in DataFrame")
+                continue
             
             # Get Spark type for casting
             spark_type = self._get_spark_type(spec)
