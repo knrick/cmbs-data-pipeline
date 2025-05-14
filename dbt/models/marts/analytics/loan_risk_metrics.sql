@@ -17,10 +17,37 @@
 /*
  * Loan Risk Metrics Model
  * 
- * This model analyzes loan risk factors by joining loan data with property metrics 
+ * This model analyzes loan risk factors by joining loan data with aggregated property metrics 
  * and properly navigating the snowflake schema to access geographic information.
  */
-WITH loan_and_property_data AS (
+WITH property_metrics AS (
+    SELECT
+        SPLIT_PART(dp.property_id, '_', 1) AS loan_id,
+        pm.reporting_date,
+        -- Aggregate property metrics at loan level
+        SUM(pm.current_valuation) AS total_valuation,
+        AVG(pm.current_occupancy_pct) AS avg_occupancy_pct,
+        AVG(pm.current_dscr) AS avg_dscr,
+        AVG(pm.valuation_change_pct) AS avg_valuation_change_pct,
+        -- Take most common property type and state
+        MODE() WITHIN GROUP (ORDER BY dp.property_type_code) AS primary_property_type,
+        MODE() WITHIN GROUP (ORDER BY s.state_code) AS primary_state,
+        -- Count properties
+        COUNT(*) AS property_count
+    FROM {{ ref('fct_property_metrics') }} pm
+    JOIN {{ ref('dim_property') }} dp 
+        ON pm.property_id = dp.property_id
+        AND pm.reporting_date >= dp.effective_date 
+        AND pm.reporting_date < dp.end_date
+    -- Geographic snowflake joins
+    LEFT JOIN {{ ref('dim_geo_address') }} a ON dp.geo_id = a.address_id
+    LEFT JOIN {{ ref('dim_geo_zip') }} z ON a.zip_id = z.zip_id
+    LEFT JOIN {{ ref('dim_geo_city') }} c ON z.city_id = c.city_id
+    LEFT JOIN {{ ref('dim_geo_state') }} s ON c.state_id = s.state_id
+    GROUP BY SPLIT_PART(dp.property_id, '_', 1), pm.reporting_date
+),
+
+loan_data AS (
     SELECT
         -- Loan metrics
         lp.loan_id,
@@ -31,55 +58,40 @@ WITH loan_and_property_data AS (
         lp.delinquency_status,
         lp.current_intr_rate,
         lp.begin_bal,
-        
-        -- Property metrics
-        dp.property_id,
-        dp.property_type_code,
-        pm.current_dscr,
-        pm.current_occupancy_pct,
-        pm.valuation_change_pct,
-        
-        -- Geography via snowflake schema
-        s.state_code AS property_state,
-        
-        -- Calculate LTV (loan-to-value ratio) where we have property valuation data
+        lp.current_bal - lp.begin_bal AS loan_amount_change,
+        -- Join to aggregated property metrics
+        pm.total_valuation,
+        pm.avg_occupancy_pct,
+        pm.avg_dscr,
+        pm.avg_valuation_change_pct,
+        pm.primary_property_type,
+        pm.primary_state,
+        pm.property_count,
+        -- Calculate LTV using total valuation
         CASE 
-            WHEN pm.current_valuation > 0 THEN lp.current_bal / pm.current_valuation
+            WHEN pm.total_valuation > 0 THEN lp.current_bal / pm.total_valuation
             ELSE NULL
-        END AS loan_to_value_ratio,
-        
-        -- Calculate month-over-month changes
-        lp.current_bal - lp.begin_bal AS loan_amount_change
+        END AS loan_to_value_ratio
     FROM {{ ref('fct_loan_monthly_performance') }} lp
-    -- Join to property dimension using SCD Type 2 date range
-    LEFT JOIN {{ ref('dim_property') }} dp 
-        ON lp.loan_id = dp.property_id
-        AND lp.reporting_date >= dp.effective_date 
-        AND lp.reporting_date < dp.end_date
-    LEFT JOIN {{ ref('fct_property_metrics') }} pm 
-        ON dp.property_id = pm.property_id 
+    LEFT JOIN property_metrics pm 
+        ON lp.loan_id = pm.loan_id
         AND lp.reporting_date = pm.reporting_date
-    -- Geographic snowflake joins
-    LEFT JOIN {{ ref('dim_geo_address') }} a ON dp.geo_id = a.address_id
-    LEFT JOIN {{ ref('dim_geo_zip') }} z ON a.zip_id = z.zip_id
-    LEFT JOIN {{ ref('dim_geo_city') }} c ON z.city_id = c.city_id
-    LEFT JOIN {{ ref('dim_geo_state') }} s ON c.state_id = s.state_id
     WHERE NOT lp.is_past_maturity
 ),
 
 risk_metrics AS (
     SELECT
         loan_id,
-        property_id,
-        trust_id,
         reporting_date,
-        property_type_code,
-        property_state,
+        trust_id,
+        primary_property_type AS property_type_code,
+        primary_state AS property_state,
+        property_count,
         -- Current metrics
         current_bal,
         loan_to_value_ratio,
-        current_dscr,
-        current_occupancy_pct,
+        avg_dscr AS current_dscr,
+        avg_occupancy_pct AS current_occupancy_pct,
         
         -- Risk indicators
         CASE
@@ -89,14 +101,14 @@ risk_metrics AS (
         END AS ltv_risk,
         
         CASE
-            WHEN current_dscr < 1.2 THEN 'High'
-            WHEN current_dscr < 1.5 THEN 'Medium'
+            WHEN avg_dscr < 1.2 THEN 'High'
+            WHEN avg_dscr < 1.5 THEN 'Medium'
             ELSE 'Low'
         END AS dscr_risk,
         
         CASE
-            WHEN current_occupancy_pct < 0.8 THEN 'High'
-            WHEN current_occupancy_pct < 0.9 THEN 'Medium'
+            WHEN avg_occupancy_pct < 0.8 THEN 'High'
+            WHEN avg_occupancy_pct < 0.9 THEN 'Medium'
             ELSE 'Low'
         END AS occupancy_risk,
         
@@ -114,8 +126,8 @@ risk_metrics AS (
         END AS loan_amount_trend,
         
         CASE
-            WHEN valuation_change_pct < -0.05 THEN 'Declining'
-            WHEN valuation_change_pct > 0.05 THEN 'Improving'
+            WHEN avg_valuation_change_pct < -0.05 THEN 'Declining'
+            WHEN avg_valuation_change_pct > 0.05 THEN 'Improving'
             ELSE 'Stable'
         END AS valuation_trend,
         
@@ -131,17 +143,17 @@ risk_metrics AS (
             
             -- DSCR component (0-4 points)
             CASE
-                WHEN current_dscr < 1.2 THEN 4
-                WHEN current_dscr < 1.5 THEN 2
-                WHEN current_dscr IS NOT NULL THEN 0
+                WHEN avg_dscr < 1.2 THEN 4
+                WHEN avg_dscr < 1.5 THEN 2
+                WHEN avg_dscr IS NOT NULL THEN 0
                 ELSE 2  -- Default medium risk when unknown
             END +
             
             -- Occupancy component (0-2 points)
             CASE
-                WHEN current_occupancy_pct < 0.8 THEN 2
-                WHEN current_occupancy_pct < 0.9 THEN 1
-                WHEN current_occupancy_pct IS NOT NULL THEN 0
+                WHEN avg_occupancy_pct < 0.8 THEN 2
+                WHEN avg_occupancy_pct < 0.9 THEN 1
+                WHEN avg_occupancy_pct IS NOT NULL THEN 0
                 ELSE 1  -- Default medium risk when unknown
             END +
             
@@ -152,8 +164,8 @@ risk_metrics AS (
                 ELSE 0  -- Current
             END
         ) / 2 AS risk_score  -- Normalize to 0-10 scale
-    FROM loan_and_property_data
-),
+    FROM loan_data
+)
 
 SELECT
     trust_id,

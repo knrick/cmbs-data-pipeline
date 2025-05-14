@@ -1224,6 +1224,14 @@ models:
         tests:
           - not_null
 
+      - name: current_intr_rate
+        description: "Current interest rate for the loan associated with this property"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 0.15
+              inclusive: true
+
       - name: current_valuation
         description: "Current property valuation"
         tests:
@@ -1309,14 +1317,6 @@ models:
         tests:
           - dbt_utils.accepted_range:
               min_value: 0
-              inclusive: true
-
-      - name: current_intr_rate
-        description: "Current loan interest rate"
-        tests:
-          - dbt_utils.accepted_range:
-              min_value: 0
-              max_value: 0.15
               inclusive: true
 
       - name: origination_date

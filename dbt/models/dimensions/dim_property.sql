@@ -17,10 +17,6 @@ WITH property_changes AS (
         -- Identifiers and dates
         asset_num || '_' || property_num AS property_id,
         reporting_date AS effective_date,
-        LEAD(reporting_date) OVER (
-            PARTITION BY asset_num, property_num 
-            ORDER BY reporting_date
-        ) AS next_change_date,
         
         -- Property attributes to track
         property_name,
@@ -81,7 +77,6 @@ WITH property_changes AS (
             ),
             'first_row'
         ) != trust AS trust_changed
-        
     FROM {{ ref('int_properties_cleaned') }}
 ),
 
@@ -89,8 +84,6 @@ versioned_properties AS (
     SELECT 
         property_id,
         effective_date,
-        -- End date is either the next change or infinity
-        COALESCE(next_change_date, '9999-12-31'::date) AS end_date,
         property_name,
         property_type_code,
         property_status_code,
@@ -115,7 +108,13 @@ SELECT
     -- SCD Type 2 fields
     vp.property_id,
     vp.effective_date,
-    vp.end_date,
+    COALESCE(
+        LEAD(vp.effective_date) OVER (
+            PARTITION BY vp.property_id 
+            ORDER BY vp.effective_date
+        ),
+        '9999-12-31'::date
+    ) AS end_date,
     
     -- Property details
     vp.property_name,
