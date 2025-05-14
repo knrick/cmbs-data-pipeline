@@ -18,6 +18,7 @@ WITH loan_dates AS (
         MAX(reporting_date) as latest_reporting_date,
         MIN(origination_date) as origination_date
     FROM {{ ref('fct_loan_monthly_performance') }}
+    WHERE NOT is_past_maturity
     GROUP BY 1, 2
 ),
 
@@ -25,19 +26,20 @@ loan_age_metrics AS (
     SELECT
         perf.loan_id,
         perf.trust_id,
+        perf.maturity_date,
         perf.reporting_date,
         perf.current_bal,
         perf.orig_bal,
         perf.origination_date,
         -- Calculate loan age in months
         DATE_PART('month', AGE(perf.reporting_date, perf.origination_date)) + 
-        DATE_PART('year', AGE(perf.reporting_date, perf.origination_date)) * 12 as loan_age_months,
+        DATE_PART('year', AGE(perf.reporting_date, perf.origination_date)) * 12 + 1 AS loan_age_months,
         -- Calculate remaining term
         DATE_PART('month', AGE(perf.maturity_date, perf.reporting_date)) + 
-        DATE_PART('year', AGE(perf.maturity_date, perf.reporting_date)) * 12 as remaining_term_months,
+        DATE_PART('year', AGE(perf.maturity_date, perf.reporting_date)) * 12 + 1 AS remaining_term_months,
         -- Original term
         DATE_PART('month', AGE(perf.maturity_date, perf.origination_date)) + 
-        DATE_PART('year', AGE(perf.maturity_date, perf.origination_date)) * 12 as original_term_months,
+        DATE_PART('year', AGE(perf.maturity_date, perf.origination_date)) * 12 + 1 AS original_term_months,
         -- Principal reduction (using balance difference)
         CASE 
             WHEN LAG(perf.current_bal) OVER (PARTITION BY perf.loan_id ORDER BY perf.reporting_date) > perf.current_bal
@@ -52,12 +54,14 @@ loan_age_metrics AS (
         END as is_prepayment
     FROM {{ ref('fct_loan_monthly_performance') }} perf
     JOIN loan_dates ld ON perf.loan_id = ld.loan_id
+    WHERE NOT perf.is_past_maturity
 ),
 
 prepayment_metrics AS (
     SELECT
         loan_id,
         trust_id,
+        maturity_date,
         reporting_date,
         loan_age_months,
         remaining_term_months,

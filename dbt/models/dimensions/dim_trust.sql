@@ -3,6 +3,7 @@
     materialized = 'table',
     post_hook = [
       "CREATE INDEX IF NOT EXISTS idx_{{ this.name }}_trust_id ON {{ this }} (trust_id)",
+      "CREATE INDEX IF NOT EXISTS idx_{{ this.name }}_trust_name ON {{ this }} (trust_name)",
       "ANALYZE {{ this }}"
     ]
   )
@@ -34,8 +35,8 @@ latest_metrics AS (
 )
 
 SELECT
-    -- Primary key
-    tm.trust AS trust_id,
+    -- Primary key (surrogate key)
+    {{ dbt_utils.generate_surrogate_key(['tm.trust']) }} AS trust_id,
     
     -- Trust attributes
     tm.trust AS trust_name,
@@ -64,10 +65,6 @@ SELECT
         WHEN lm.current_loan_count > 0 
         THEN lm.delinquent_loans / lm.current_loan_count::NUMERIC 
         ELSE 0 
-    END AS delinquency_ratio,
-    
-    -- Timestamp fields
-    CURRENT_TIMESTAMP AS created_at,
-    CURRENT_TIMESTAMP AS updated_at
+    END AS delinquency_ratio
 FROM trust_metadata tm
 LEFT JOIN latest_metrics lm ON tm.trust = lm.trust AND lm.recency_rank = 1 

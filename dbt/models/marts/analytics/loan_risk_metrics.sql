@@ -33,13 +33,13 @@ WITH loan_and_property_data AS (
         lp.begin_bal,
         
         -- Property metrics
-        pm.property_id,
-        pm.property_type_code,
+        dp.property_id,
+        dp.property_type_code,
         pm.current_dscr,
         pm.current_occupancy_pct,
         pm.valuation_change_pct,
         
-        -- Geography via properly joined snowflake schema
+        -- Geography via snowflake schema
         s.state_code AS property_state,
         
         -- Calculate LTV (loan-to-value ratio) where we have property valuation data
@@ -51,14 +51,20 @@ WITH loan_and_property_data AS (
         -- Calculate month-over-month changes
         lp.current_bal - lp.begin_bal AS loan_amount_change
     FROM {{ ref('fct_loan_monthly_performance') }} lp
+    -- Join to property dimension using SCD Type 2 date range
+    LEFT JOIN {{ ref('dim_property') }} dp 
+        ON lp.loan_id = dp.property_id
+        AND lp.reporting_date >= dp.effective_date 
+        AND lp.reporting_date < dp.end_date
     LEFT JOIN {{ ref('fct_property_metrics') }} pm 
-        ON lp.loan_id = pm.property_id 
+        ON dp.property_id = pm.property_id 
         AND lp.reporting_date = pm.reporting_date
-    -- Join to property and geographic dimensions through snowflake hierarchy
-    LEFT JOIN {{ ref('dim_property') }} dp ON lp.loan_id = dp.property_id
-    LEFT JOIN {{ ref('dim_geo_zip') }} z ON dp.zip_id = z.zip_id
+    -- Geographic snowflake joins
+    LEFT JOIN {{ ref('dim_geo_address') }} a ON dp.geo_id = a.address_id
+    LEFT JOIN {{ ref('dim_geo_zip') }} z ON a.zip_id = z.zip_id
     LEFT JOIN {{ ref('dim_geo_city') }} c ON z.city_id = c.city_id
     LEFT JOIN {{ ref('dim_geo_state') }} s ON c.state_id = s.state_id
+    WHERE NOT lp.is_past_maturity
 ),
 
 risk_metrics AS (
@@ -149,40 +155,36 @@ risk_metrics AS (
     FROM loan_and_property_data
 ),
 
-aggregated_metrics AS (
-    SELECT
-        trust_id,
-        property_type_code,
-        property_state,
-        reporting_date,
-        
-        -- Portfolio metrics
-        COUNT(*) AS loan_count,
-        SUM(current_bal) AS total_loan_amt,
-        AVG(loan_to_value_ratio) AS avg_ltv,
-        AVG(current_dscr) AS avg_dscr,
-        AVG(current_occupancy_pct) AS avg_occupancy,
-        
-        -- Risk distribution
-        SUM(CASE WHEN ltv_risk = 'High' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)::FLOAT AS high_ltv_pct,
-        SUM(CASE WHEN dscr_risk = 'High' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)::FLOAT AS high_dscr_pct,
-        SUM(CASE WHEN occupancy_risk = 'High' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)::FLOAT AS high_occupancy_risk_pct,
-        SUM(CASE WHEN delinquency_risk = 'High' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)::FLOAT AS high_delinquency_risk_pct,
-        
-        -- Average risk score
-        AVG(risk_score) AS avg_risk_score,
-        
-        -- Risk stratification
-        SUM(CASE WHEN risk_score >= 8 THEN current_bal ELSE 0 END) AS high_risk_bal,
-        SUM(CASE WHEN risk_score >= 4 AND risk_score < 8 THEN current_bal ELSE 0 END) AS medium_risk_bal,
-        SUM(CASE WHEN risk_score < 4 THEN current_bal ELSE 0 END) AS low_risk_bal,
-        
-        -- Calculate risk ratios
-        SUM(CASE WHEN risk_score >= 8 THEN current_bal ELSE 0 END) / NULLIF(SUM(current_bal), 0) AS high_risk_ratio,
-        SUM(CASE WHEN risk_score >= 4 AND risk_score < 8 THEN current_bal ELSE 0 END) / NULLIF(SUM(current_bal), 0) AS medium_risk_ratio,
-        SUM(CASE WHEN risk_score < 4 THEN current_bal ELSE 0 END) / NULLIF(SUM(current_bal), 0) AS low_risk_ratio
-    FROM risk_metrics
-    GROUP BY trust_id, property_type_code, property_state, reporting_date
-)
-
-SELECT * FROM aggregated_metrics 
+SELECT
+    trust_id,
+    property_type_code,
+    property_state,
+    reporting_date,
+    
+    -- Portfolio metrics
+    COUNT(*) AS loan_count,
+    SUM(current_bal) AS total_loan_amt,
+    AVG(loan_to_value_ratio) AS avg_ltv,
+    AVG(current_dscr) AS avg_dscr,
+    AVG(current_occupancy_pct) AS avg_occupancy,
+    
+    -- Risk distribution
+    SUM(CASE WHEN ltv_risk = 'High' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)::FLOAT AS high_ltv_pct,
+    SUM(CASE WHEN dscr_risk = 'High' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)::FLOAT AS high_dscr_pct,
+    SUM(CASE WHEN occupancy_risk = 'High' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)::FLOAT AS high_occupancy_risk_pct,
+    SUM(CASE WHEN delinquency_risk = 'High' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0)::FLOAT AS high_delinquency_risk_pct,
+    
+    -- Average risk score
+    AVG(risk_score) AS avg_risk_score,
+    
+    -- Risk stratification
+    SUM(CASE WHEN risk_score >= 8 THEN current_bal ELSE 0 END) AS high_risk_bal,
+    SUM(CASE WHEN risk_score >= 4 AND risk_score < 8 THEN current_bal ELSE 0 END) AS medium_risk_bal,
+    SUM(CASE WHEN risk_score < 4 THEN current_bal ELSE 0 END) AS low_risk_bal,
+    
+    -- Calculate risk ratios
+    SUM(CASE WHEN risk_score >= 8 THEN current_bal ELSE 0 END) / NULLIF(SUM(current_bal), 0) AS high_risk_ratio,
+    SUM(CASE WHEN risk_score >= 4 AND risk_score < 8 THEN current_bal ELSE 0 END) / NULLIF(SUM(current_bal), 0) AS medium_risk_ratio,
+    SUM(CASE WHEN risk_score < 4 THEN current_bal ELSE 0 END) / NULLIF(SUM(current_bal), 0) AS low_risk_ratio
+FROM risk_metrics
+GROUP BY trust_id, property_type_code, property_state, reporting_date

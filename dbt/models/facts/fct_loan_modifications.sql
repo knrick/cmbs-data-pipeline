@@ -16,12 +16,11 @@ WITH loan_monthly_data AS (
         reporting_period_end_date AS reporting_date,
         trust AS trust_id,
         company AS issuer,
-        payment_status_loan_code,
         report_period_intr_rate_pct AS current_intr_rate,
         report_period_end_scheduled_loan_bal_amt AS current_bal,
         report_period_modification_indicator,
         modified_indicator,
-        maturity_date
+        {{ fill_scd_value('maturity_date', ['asset_num']) }} AS maturity_date
     FROM {{ source('cmbs', 'loans') }}
     WHERE reporting_period_end_date IS NOT NULL
     
@@ -141,10 +140,7 @@ SELECT
     current_bal,
     
     -- Timestamp
-    CURRENT_TIMESTAMP AS loaded_at,
-    
-    -- Metadata
-    issuer
+    CURRENT_TIMESTAMP AS loaded_at
 FROM modifications
 WHERE
     has_rate_change = TRUE OR has_maturity_change = TRUE 

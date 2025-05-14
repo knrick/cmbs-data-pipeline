@@ -37,6 +37,10 @@ sources:
             description: "Unique identifier for the property asset"
             tests:
               - not_null
+          - name: property_num
+            description: "Unique identifier for the property within the asset"
+            tests:
+              - not_null
               
           - name: reporting_period_end_date
             description: "Date of the reporting period"

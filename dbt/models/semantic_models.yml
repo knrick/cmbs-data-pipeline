@@ -1,0 +1,300 @@
+version: 2
+
+# Commented out until we need them for BI tool integration
+
+# semantic_models:
+#   - name: loans
+#     description: "Monthly loan performance metrics from CMBS trusts"
+#     model: ref('fct_loan_monthly_performance')
+#     defaults:
+#       agg_time_dimension: reporting_date
+    
+#     entities:
+#       - name: loan
+#         type: primary
+#         expr: loan_id
+      
+#       - name: trust
+#         type: foreign
+#         expr: trust_id
+    
+#     dimensions:
+#       - name: reporting_date
+#         type: time
+#         type_params:
+#           time_granularity: day
+      
+#       - name: delinquency_status
+#         type: categorical
+#         expr: delinquency_status
+      
+#       - name: days_past_due
+#         type: categorical
+#         expr: days_past_due
+      
+#       - name: loan_status
+#         type: categorical
+#         expr: loan_status
+    
+#     measures:
+#       - name: current_balance
+#         description: "Current loan balance"
+#         expr: current_bal
+#         agg: sum
+      
+#       - name: beginning_balance
+#         description: "Beginning loan balance"
+#         expr: begin_bal
+#         agg: sum
+      
+#       - name: delinquent_balance
+#         description: "Delinquent loan balance"
+#         expr: "CASE WHEN days_past_due > 0 THEN current_bal ELSE 0 END"
+#         agg: sum
+      
+#       - name: loan_count
+#         description: "Count of loans"
+#         expr: "1"
+#         agg: count_distinct
+      
+#       - name: delinquent_loan_count
+#         description: "Count of delinquent loans"
+#         expr: "CASE WHEN days_past_due > 0 THEN 1 ELSE 0 END"
+#         agg: sum
+      
+#       - name: average_interest_rate
+#         description: "Average interest rate"
+#         expr: current_intr_rate
+#         agg: average
+
+#   - name: properties
+#     description: "Property metrics from CMBS trusts"
+#     model: ref('property_occupancy_noi')
+#     defaults:
+#       agg_time_dimension: reporting_date
+    
+#     entities:
+#       - name: property
+#         type: primary
+#         expr: property_id
+      
+#       - name: trust
+#         type: foreign
+#         expr: trust_id
+    
+#     dimensions:
+#       - name: reporting_date
+#         type: time
+#         type_params:
+#           time_granularity: day
+      
+#       - name: property_type_code
+#         type: categorical
+#         expr: property_type_code
+      
+#       - name: state
+#         type: categorical
+#         expr: state
+      
+#       - name: region
+#         type: categorical
+#         expr: region
+    
+#     measures:
+#       - name: current_valuation
+#         description: "Current property valuation"
+#         expr: current_valuation
+#         agg: sum
+      
+#       - name: average_occupancy
+#         description: "Average occupancy percentage"
+#         expr: current_occupancy_pct
+#         agg: average
+      
+#       - name: average_dscr
+#         description: "Average debt service coverage ratio"
+#         expr: current_dscr
+#         agg: average
+      
+#       - name: property_count
+#         description: "Count of properties"
+#         expr: "1"
+#         agg: count_distinct
+          
+#       - name: valuation_change_pct
+#         description: "Percentage change in property valuation"
+#         expr: valuation_change_pct
+#         agg: average
+        
+#       - name: current_noi
+#         description: "Current net operating income"
+#         expr: current_noi
+#         agg: sum
+      
+#       - name: net_rentable_square_feet_number
+#         description: "Net rentable square feet"
+#         expr: net_rentable_square_feet_number
+#         agg: sum
+      
+#       - name: current_occupancy_weighted
+#         description: "Occupancy weighted by square feet"
+#         expr: current_occupancy * net_rentable_square_feet_number
+#         agg: sum
+
+#   - name: portfolio_concentration
+#     description: "Analysis of loan portfolio concentration across different dimensions"
+#     model: ref('portfolio_concentration')
+#     defaults:
+#       agg_time_dimension: reporting_date
+    
+#     entities:
+#       - name: concentration_category
+#         type: primary
+#         expr: concentration_category
+    
+#     dimensions:
+#       - name: reporting_date
+#         type: time
+#         type_params:
+#           time_granularity: day
+      
+#       - name: concentration_type
+#         type: categorical
+#         expr: concentration_type
+    
+#     measures:
+#       - name: concentration_loan_count
+#         description: "Number of loans in a concentration category"
+#         expr: loan_count
+#         agg: sum
+      
+#       - name: concentration_balance
+#         description: "Total loan balance in a concentration category"
+#         expr: total_balance
+#         agg: sum
+      
+#       - name: pct_of_balance
+#         description: "Percentage of total balance in a concentration category"
+#         expr: pct_of_balance
+#         agg: max
+      
+#       - name: max_property_type_pct
+#         description: "Maximum concentration percentage for property types"
+#         expr: "CASE WHEN concentration_type = 'Property Type' THEN pct_of_balance ELSE 0 END"
+#         agg: max
+      
+#       - name: max_state_pct
+#         description: "Maximum concentration percentage for states"
+#         expr: "CASE WHEN concentration_type = 'State' THEN pct_of_balance ELSE 0 END"
+#         agg: max
+      
+#       - name: herfindahl_property_types
+#         description: "Herfindahl index for property type concentration"
+#         expr: "CASE WHEN concentration_type = 'Property Type' THEN pct_of_balance * pct_of_balance ELSE 0 END"
+#         agg: sum
+
+#   - name: vintage_performance
+#     description: "Analysis of loan performance by origination vintage"
+#     model: ref('vintage_performance')
+#     defaults:
+#       agg_time_dimension: reporting_date
+    
+#     entities:
+#       - name: vintage
+#         type: primary
+#         expr: vintage_year
+    
+#     dimensions:
+#       - name: reporting_date
+#         type: time
+#         type_params:
+#           time_granularity: day
+      
+#       - name: vintage_year
+#         type: categorical
+#         expr: vintage_year
+      
+#       - name: vintage_age_months
+#         type: categorical
+#         expr: vintage_age_months
+    
+#     measures:
+#       - name: min_vintage_delinquency
+#         description: "Minimum delinquency rate among vintages"
+#         expr: delinquency_rate
+#         agg: min
+      
+#       - name: max_vintage_delinquency
+#         description: "Maximum delinquency rate among vintages"
+#         expr: delinquency_rate
+#         agg: max
+      
+#       - name: vintage_delinquency_diff
+#         description: "Spread between worst and best vintage delinquency rates"
+#         expr: "delinquency_rate - AVG(delinquency_rate) OVER(PARTITION BY reporting_date)"
+#         agg: max
+      
+#       - name: vintage_loan_count
+#         description: "Number of loans in a vintage"
+#         expr: loan_count
+#         agg: sum
+      
+#       - name: vintage_balance
+#         description: "Total loan balance in a vintage"
+#         expr: total_balance
+#         agg: sum
+
+#   - name: property_analytics
+#     description: "Enhanced property performance analysis with benchmarking"
+#     model: ref('property_performance_metrics')
+#     defaults:
+#       agg_time_dimension: analytics_date
+    
+#     entities:
+#       - name: property_analytics
+#         type: primary
+#         expr: property_id
+    
+#     dimensions:
+#       - name: analytics_date
+#         type: time
+#         expr: reporting_date
+#         type_params:
+#           time_granularity: day
+      
+#       - name: analytics_property_type
+#         type: categorical
+#         expr: property_type_code
+      
+#       - name: performance_category
+#         type: categorical
+#         expr: performance_category
+      
+#       - name: occupancy_trend
+#         type: categorical
+#         expr: occupancy_trend
+      
+#       - name: noi_trend
+#         type: categorical
+#         expr: noi_trend
+    
+#     measures:
+#       - name: distressed_property_pct
+#         description: "Percentage of properties categorized as distressed"
+#         expr: "CASE WHEN performance_category = 'Distressed' THEN 1 ELSE 0 END"
+#         agg: average
+      
+#       - name: avg_property_risk
+#         description: "Average property risk score"
+#         expr: property_risk_score
+#         agg: average
+      
+#       - name: declining_occupancy_pct
+#         description: "Percentage of properties with declining occupancy"
+#         expr: "CASE WHEN occupancy_trend = 'Declining' THEN 1 ELSE 0 END"
+#         agg: average
+      
+#       - name: avg_noi_growth
+#         description: "Average NOI growth rate"
+#         expr: "CASE WHEN noi_3m_change IS NOT NULL AND current_noi > 0 THEN noi_3m_change / NULLIF(current_noi - noi_3m_change, 0) ELSE 0 END"
+#         agg: average 

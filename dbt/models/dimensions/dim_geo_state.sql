@@ -1,6 +1,7 @@
 {{
   config(
     materialized = 'table',
+    unique_key = 'state_id',
     post_hook = [
       "CREATE INDEX IF NOT EXISTS idx_{{ this.name }}_state_code ON {{ this }} (state_code)",
       "ANALYZE {{ this }}"
@@ -10,7 +11,7 @@
 
 -- Clean, self-contained state dimension with no dependencies on dim_geography
 SELECT 
-  ROW_NUMBER() OVER (ORDER BY state_code) AS state_id,
+  {{ dbt_utils.generate_surrogate_key(['state_code']) }} AS state_id,
   state_code,
   state_name,
   region_name,
@@ -91,5 +92,9 @@ FROM (
     ('VI', 'Virgin Islands', 'Other', 'Non-Contiguous'),
     ('GU', 'Guam', 'Other', 'Non-Contiguous'),
     ('MP', 'Northern Mariana Islands', 'Other', 'Non-Contiguous'),
-    ('AS', 'American Samoa', 'Other', 'Non-Contiguous')
-) AS states(state_code, state_name, region_name, division_name) 
+    ('AS', 'American Samoa', 'Other', 'Non-Contiguous'),
+
+    -- Unknown/Not Applicable
+    ('NA', 'Not Applicable', 'Unknown', 'Unknown'),
+    ('UNK', 'Unknown', 'Unknown', 'Unknown')
+) AS states(state_code, state_name, region_name, division_name)

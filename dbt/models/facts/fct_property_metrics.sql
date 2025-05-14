@@ -15,112 +15,93 @@
   )
 }}
 
-WITH property_data AS (
-    SELECT DISTINCT ON (asset_num, reporting_period_end_date)
-        p.asset_num AS property_id,
-        p.reporting_period_end_date AS reporting_date,
-        p.trust AS trust_id,
+WITH property_metrics_base AS (
+    SELECT
+        -- Generate surrogate key
+        {{ dbt_utils.generate_surrogate_key(['p.asset_num', 'p.property_num', 'p.reporting_date', 'dt.trust_id']) }} AS property_metric_id,
         
-        -- Property characteristics
-        p.property_type_code,
-        p.net_rentable_square_feet_num AS square_feet,
-        p.units_beds_rooms_num AS unit_count,
-        
-        -- Valuation metrics
-        p.most_recent_valuation_amt AS current_valuation,
-        p.valuation_securitization_amt AS securitization_valuation,
-        
-        -- Occupancy metrics
-        p.most_recent_physical_occupancy_pct AS current_occupancy_pct,
-        p.physical_occupancy_securitization_pct AS securitization_occupancy_pct,
-        
-        -- Financial metrics
-        p.most_recent_revenue_amt AS current_revenue,
-        COALESCE(p.operating_expenses_amt, 0) AS current_expenses,
-        p.most_recent_net_operating_income_amt AS current_noi,
-        p.most_recent_debt_service_amt AS current_dscr,
-        
-        -- Tenant metrics
+        -- Base identifiers and metrics
+        p.asset_num || '_' || p.property_num AS property_id,
+        p.reporting_date,
+        dt.trust_id,
+        dp.property_type_code,
+        dp.square_feet,
+        dp.unit_count,
+        p.current_valuation,
+        p.securitization_valuation,
+        p.current_occupancy_pct,
+        p.securitization_occupancy_pct,
+        p.current_revenue,
+        p.current_expenses,
+        p.current_noi,
+        p.current_dscr,
         p.largest_tenant IS NOT NULL AS has_largest_tenant,
         p.second_largest_tenant IS NOT NULL AS has_second_largest_tenant,
         p.third_largest_tenant IS NOT NULL AS has_third_largest_tenant,
-        
-        -- Status
-        p.property_status_code,
-        
-        -- Metadata
+        dp.property_status_code,
         p.company AS issuer
-    FROM {{ source('cmbs', 'properties') }} p
-    WHERE p.reporting_period_end_date IS NOT NULL
-    
+    FROM {{ ref('int_properties_cleaned') }} p
+    -- Join to dim_property
+    JOIN {{ ref('dim_property') }} dp 
+        ON p.asset_num || '_' || p.property_num = dp.property_id
+        AND p.reporting_date >= dp.effective_date 
+        AND p.reporting_date < dp.end_date
+    JOIN {{ ref('dim_trust') }} dt 
+        ON p.trust = dt.trust_name
     {% if is_incremental() %}
-      -- Only process new data since last run
-      AND p.reporting_period_end_date > (
-        SELECT COALESCE(MAX(reporting_date), '2000-01-01'::date) FROM {{ this }}
-      )
+    WHERE p.reporting_date > (SELECT MAX(reporting_date) FROM {{ this }})
     {% endif %}
 )
 
 SELECT
-    -- Generate surrogate key using dbt_utils
-    {{ dbt_utils.generate_surrogate_key(['pd.property_id', 'pd.reporting_date', 'pd.trust_id']) }} AS property_metric_id,
-    
-    -- Foreign keys for dimension tables
-    pd.property_id,
-    pd.reporting_date,
-    pd.trust_id,
-    
-    -- Property characteristics
-    pd.property_type_code,
-    pd.square_feet,
-    pd.unit_count,
+    property_metric_id,
+    property_id,
+    reporting_date,
+    trust_id,
+    property_type_code,
+    square_feet,
+    unit_count,
+    current_valuation,
+    securitization_valuation,
+    current_occupancy_pct,
+    securitization_occupancy_pct,
+    current_revenue,
+    current_expenses,
+    current_noi,
+    current_dscr,
+    has_largest_tenant,
+    has_second_largest_tenant,
+    has_third_largest_tenant,
+    property_status_code,
+    issuer,
     
     -- Valuation metrics
-    pd.current_valuation,
-    pd.securitization_valuation,
     CASE 
-        WHEN pd.securitization_valuation > 0 
-        THEN (pd.current_valuation - pd.securitization_valuation) / pd.securitization_valuation 
-        ELSE NULL 
+        WHEN securitization_valuation = 0
+        THEN 0
+        ELSE (current_valuation - securitization_valuation) / securitization_valuation 
     END AS valuation_change_pct,
     
-    -- Occupancy metrics
-    pd.current_occupancy_pct,
-    pd.securitization_occupancy_pct,
-    COALESCE(pd.current_occupancy_pct, 0) - COALESCE(pd.securitization_occupancy_pct, 0) AS occupancy_change_pct,
+    COALESCE(current_occupancy_pct, 0) - COALESCE(securitization_occupancy_pct, 0) AS occupancy_change_pct,
     
-    -- Financial metrics
-    pd.current_revenue,
-    pd.current_expenses,
-    pd.current_noi,
-    pd.current_dscr,
-    CASE 
-        WHEN pd.current_revenue > 0 
-        THEN pd.current_expenses / pd.current_revenue 
-        ELSE NULL 
+    CASE
+        WHEN current_revenue = 0
+        THEN 0
+        ELSE current_expenses / current_revenue
     END AS expense_ratio,
     
-    -- Calculated revenue metrics
     CASE 
-        WHEN pd.square_feet > 0 
-        THEN pd.current_revenue / pd.square_feet 
+        WHEN square_feet > 0 
+        THEN current_revenue / square_feet 
         ELSE NULL 
     END AS revenue_per_sqft,
     
     CASE 
-        WHEN pd.unit_count > 0 
-        THEN pd.current_revenue / pd.unit_count 
+        WHEN unit_count > 0 
+        THEN current_revenue / unit_count 
         ELSE NULL 
     END AS revenue_per_unit,
-    
-    -- Tenant metrics
-    pd.has_largest_tenant,
-    pd.has_second_largest_tenant,
-    pd.has_third_largest_tenant,
-    
-    -- Status
-    pd.property_status_code,
-    
-    -- Timestamp
+
     CURRENT_TIMESTAMP AS loaded_at
-FROM property_data pd 
+
+FROM property_metrics_base 

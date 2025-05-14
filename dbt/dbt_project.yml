@@ -15,9 +15,11 @@ target-path: "target"
 clean-targets:
   - "target"
   - "dbt_packages"
+  - "logs"
 
 vars:
   'dbt_date:time_zone': 'America/New_York'
+  'current_year': '{{ modules.datetime.datetime.now().year }}'
 
 models:
   cmbs_analytics:
@@ -33,3 +35,6 @@ models:
     marts:
       +materialized: table
       +schema: mart
+
+    staging:
+      materialized: view

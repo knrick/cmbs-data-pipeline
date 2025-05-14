@@ -10,130 +10,146 @@
     post_hook = [
       "CREATE INDEX IF NOT EXISTS idx_{{ this.name }}_loan_date ON {{ this }} (loan_id, reporting_date)",
       "CREATE INDEX IF NOT EXISTS idx_{{ this.name }}_trust_date ON {{ this }} (trust_id, reporting_date)",
-      "CREATE INDEX IF NOT EXISTS idx_{{ this.name }}_delinquency ON {{ this }} (delinquency_status, reporting_date)",
       "ANALYZE {{ this }}"
     ]
   )
 }}
 
-WITH loan_monthly_data AS (
+WITH loan_data AS (
     SELECT DISTINCT ON (asset_num, reporting_period_end_date)
-        l.asset_num AS loan_id,
-        l.reporting_period_end_date AS reporting_date,
-        l.trust AS trust_id,
+        -- Identifiers
+        asset_num AS loan_id,
+        reporting_period_end_date AS reporting_date,
+        trust AS trust_name,
+        company AS issuer,
         
-        -- Loan status metrics
-        COALESCE(NULLIF(l.payment_status_loan_code, ''), '0') AS delinquency_status,
-        l.modified_indicator AS is_modified,
-        l.report_period_modification_indicator AS modified_this_period,
-        l.maturity_date < l.reporting_period_end_date AS is_past_maturity,
+        -- Loan characteristics
+        original_loan_amt AS orig_bal,
+        report_period_end_scheduled_loan_bal_amt AS current_bal,
+        report_period_begin_schedule_loan_bal_amt AS begin_bal,
+        report_period_intr_rate_pct AS current_intr_rate,
+        payment_frequency_code AS payment_frequency,
+        {{ fill_scd_value('maturity_date', ['asset_num']) }} AS maturity_date,
+        origination_date,
         
-        -- Balance metrics
-        l.report_period_end_scheduled_loan_bal_amt AS current_bal,
-        l.report_period_begin_schedule_loan_bal_amt AS begin_bal,
-        l.original_loan_amt AS orig_bal,
-        
-        -- Calculated balance metrics
-        CASE 
-            WHEN l.original_loan_amt > 0 
-            THEN l.report_period_end_scheduled_loan_bal_amt / l.original_loan_amt 
-            ELSE NULL 
-        END AS remaining_bal_pct,
-        
-        CASE 
-            WHEN l.report_period_begin_schedule_loan_bal_amt > 0 
-            THEN (l.report_period_end_scheduled_loan_bal_amt - l.report_period_begin_schedule_loan_bal_amt) 
-                / l.report_period_begin_schedule_loan_bal_amt 
-            ELSE NULL 
-        END AS bal_change_pct,
-        
-        -- Payment metrics
-        l.total_scheduled_prin_intr_due_amt AS pmt_due,
-        l.scheduled_prin_amt + l.scheduled_intr_amt AS pmt_received,
-        l.total_scheduled_prin_intr_due_amt - 
-          (l.scheduled_prin_amt + l.scheduled_intr_amt) AS pmt_shortfall,
-          
-        -- Interest metrics  
-        l.report_period_intr_rate_pct AS current_intr_rate,
-        
-        -- Dates
-        l.maturity_date,
-        l.origination_date,
-        
-        -- Metadata
-        l.company AS issuer,
-        l.trust AS trust_name
-    FROM {{ source('cmbs', 'loans') }} l
-    WHERE l.reporting_period_end_date IS NOT NULL
-    
+        -- Status and payments
+        CASE
+            WHEN payment_status_loan_code IN ('A', 'B') THEN '0'
+            ELSE COALESCE(payment_status_loan_code, '0')
+        END AS delinquency_status,
+        modified_indicator AS is_modified,
+        report_period_modification_indicator AS modified_this_period,
+        total_scheduled_prin_intr_due_amt AS pmt_due,
+        scheduled_prin_amt + scheduled_intr_amt AS pmt_received
+    FROM {{ source('cmbs', 'loans') }}
     {% if is_incremental() %}
-      -- Only process new data since last run
-      AND l.reporting_period_end_date > (
-        SELECT COALESCE(MAX(reporting_date), '2000-01-01'::date) FROM {{ this }}
-      )
+    WHERE reporting_period_end_date > (SELECT MAX(reporting_date) FROM {{ this }})
     {% endif %}
+),
+
+-- Simple handling of A/B notes - just COALESCE values
+loan_data_with_split_notes AS (
+    SELECT 
+        l1.loan_id,
+        l1.reporting_date,
+        l1.trust_name,
+        l1.issuer,
+        COALESCE(l1.orig_bal, l2.orig_bal) AS orig_bal,
+        COALESCE(l1.current_bal, l2.current_bal) AS current_bal,
+        COALESCE(l1.begin_bal, l2.begin_bal) AS begin_bal,
+        COALESCE(l1.current_intr_rate, l2.current_intr_rate) AS current_intr_rate,
+        COALESCE(l1.payment_frequency, l2.payment_frequency) AS payment_frequency,
+        COALESCE(l1.maturity_date, l2.maturity_date) AS maturity_date,
+        COALESCE(l1.origination_date, l2.origination_date) AS origination_date,
+        COALESCE(l1.delinquency_status, l2.delinquency_status) AS delinquency_status,
+        COALESCE(l1.is_modified, l2.is_modified) AS is_modified,
+        COALESCE(l1.modified_this_period, l2.modified_this_period) AS modified_this_period,
+        COALESCE(l1.pmt_due, l2.pmt_due) AS pmt_due,
+        COALESCE(l1.pmt_received, l2.pmt_received) AS pmt_received
+    FROM loan_data l1
+    LEFT JOIN loan_data l2
+        ON l2.loan_id = l1.loan_id || 'A'
+        AND l2.reporting_date = l1.reporting_date
 )
 
 SELECT
-    -- Generate surrogate key using dbt_utils
-    {{ dbt_utils.generate_surrogate_key(['loan_id', 'reporting_date', 'trust_id']) }} AS performance_id,
+    -- Generate surrogate key
+    {{ dbt_utils.generate_surrogate_key(['ld.loan_id', 'ld.reporting_date', 'dt.trust_id']) }} AS loan_performance_id,
     
-    -- Foreign keys for dimension tables
-    loan_id,
-    reporting_date,
-    trust_id,
+    -- Base identifiers
+    ld.loan_id,
+    ld.reporting_date,
+    dt.trust_id,
     
-    -- Loan status metrics
-    delinquency_status,
-    is_modified,
-    modified_this_period,
-    is_past_maturity,
+    -- Loan balances
+    ld.current_bal,
+    ld.begin_bal,
+    ld.orig_bal,
     
-    -- Calculate DPD (Days Past Due) based on delinquency status
+    -- Status flags
+    ld.delinquency_status,
+    ld.is_modified,
+    ld.modified_this_period,
+    ld.maturity_date < ld.reporting_date AS is_past_maturity,
+    
+    -- Calculate days past due
     CASE 
-        WHEN delinquency_status = '0' THEN 0
-        WHEN delinquency_status = '1' THEN 30
-        WHEN delinquency_status = '2' THEN 60
-        WHEN delinquency_status = '3' THEN 90
-        WHEN delinquency_status = '4' THEN 120
-        WHEN delinquency_status = '5' THEN 150
-        WHEN delinquency_status = '6' THEN 180
+        WHEN ld.delinquency_status = '0' THEN 0
+        WHEN ld.delinquency_status = '1' THEN 30
+        WHEN ld.delinquency_status = '2' THEN 60
+        WHEN ld.delinquency_status = '3' THEN 90
+        WHEN ld.delinquency_status = '4' THEN 120
+        WHEN ld.delinquency_status = '5' THEN 150
+        WHEN ld.delinquency_status = '6' THEN 180
         ELSE 0
     END AS days_past_due,
     
-    -- Status flags
-    CASE 
-        WHEN delinquency_status = '0' THEN 'Current'
-        WHEN delinquency_status IN ('1', '2') THEN 'Delinquent < 90 Days'
-        WHEN delinquency_status IN ('3', '4', '5', '6') THEN 'Delinquent 90+ Days'
+    -- Loan status categorization
+    CASE
+        WHEN ld.delinquency_status = '0' THEN 'Current'
+        WHEN ld.delinquency_status IN ('1', '2') THEN 'Delinquent < 90 Days'
+        WHEN ld.delinquency_status IN ('3', '4', '5', '6') THEN 'Delinquent 90+ Days'
         ELSE 'Other'
     END AS loan_status,
     
-    -- Balance metrics
-    current_bal,
-    begin_bal,
-    orig_bal,
-    remaining_bal_pct,
-    bal_change_pct,
-    
     -- Payment metrics
-    pmt_due,
-    pmt_received,
-    pmt_shortfall,
+    ld.pmt_due,
+    ld.pmt_received,
+    ld.pmt_due - ld.pmt_received AS pmt_shortfall,
     
-    -- Interest metrics
-    current_intr_rate,
+    -- Loan characteristics
+    ld.current_intr_rate,
+    ld.payment_frequency,
+    ld.maturity_date,
+    ld.origination_date,
+    ld.issuer,
     
-    -- Important dates
-    maturity_date,
-    origination_date,
+    -- Derived metrics
+    CASE 
+        WHEN ld.orig_bal > 0 
+        THEN ld.current_bal / ld.orig_bal 
+        ELSE NULL 
+    END AS remaining_bal_pct,
+    
+    CASE 
+        WHEN ld.maturity_date IS NOT NULL 
+        THEN DATE_PART('month', AGE(ld.maturity_date, ld.reporting_date)) 
+        ELSE NULL 
+    END AS months_to_maturity,
+    
+    CASE 
+        WHEN ld.origination_date IS NOT NULL 
+        THEN DATE_PART('month', AGE(ld.reporting_date, ld.origination_date)) 
+        ELSE NULL 
+    END AS months_since_origination,
     
     -- Delinquent amount calculation
     CASE 
-        WHEN delinquency_status != '0' THEN pmt_shortfall
-        ELSE 0
+        WHEN ld.delinquency_status != '0' 
+        THEN ld.pmt_due - ld.pmt_received
+        ELSE 0 
     END AS delinquent_amt,
     
-    -- Timestamp
     CURRENT_TIMESTAMP AS loaded_at
-FROM loan_monthly_data 
+FROM loan_data_with_split_notes ld
+JOIN {{ ref('dim_trust') }} dt ON ld.trust_name = dt.trust_name 

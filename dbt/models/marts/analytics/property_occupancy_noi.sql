@@ -14,9 +14,8 @@ WITH property_metrics AS (
     SELECT
         pm.property_id,
         pm.reporting_date,
-        p.property_type_code,
-        p.year_built,
-        p.zip_id,
+        dp.property_type_code,
+        dp.year_built,
         s.state_code as state,
         s.region_name as region,
         pm.current_occupancy_pct as current_occupancy,
@@ -24,10 +23,16 @@ WITH property_metrics AS (
         pm.current_revenue,
         pm.current_expenses,
         pm.current_noi,
-        pm.square_feet
+        dp.square_feet
     FROM {{ ref('fct_property_metrics') }} pm
-    LEFT JOIN {{ ref('dim_property') }} p ON pm.property_id = p.property_id
-    LEFT JOIN {{ ref('dim_geo_zip') }} z ON p.zip_id = z.zip_id
+    -- Join to property dimension
+    JOIN {{ ref('dim_property') }} dp 
+        ON pm.property_id = dp.property_id
+        AND pm.reporting_date >= dp.effective_date 
+        AND pm.reporting_date < dp.end_date
+    -- Geographic snowflake joins
+    LEFT JOIN {{ ref('dim_geo_address') }} a ON dp.geo_id = a.address_id
+    LEFT JOIN {{ ref('dim_geo_zip') }} z ON a.zip_id = z.zip_id
     LEFT JOIN {{ ref('dim_geo_city') }} c ON z.city_id = c.city_id
     LEFT JOIN {{ ref('dim_geo_state') }} s ON c.state_id = s.state_id
 ),

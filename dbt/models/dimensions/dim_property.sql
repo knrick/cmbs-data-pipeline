@@ -1,93 +1,147 @@
 {{
   config(
     materialized = 'table',
+    unique_key = ['property_id', 'effective_date'],
     post_hook = [
-      "CREATE INDEX IF NOT EXISTS idx_{{ this.name }}_property_id ON {{ this }} (property_id)",
+      "CREATE INDEX IF NOT EXISTS idx_{{ this.name }}_property_dates ON {{ this }} (property_id, effective_date, end_date)",
       "CREATE INDEX IF NOT EXISTS idx_{{ this.name }}_property_type ON {{ this }} (property_type_code)",
-      "CREATE INDEX IF NOT EXISTS idx_{{ this.name }}_zip_id ON {{ this }} (zip_id)",
+      "CREATE INDEX IF NOT EXISTS idx_{{ this.name }}_geo ON {{ this }} (geo_id)",
+      "CREATE INDEX IF NOT EXISTS idx_{{ this.name }}_trust ON {{ this }} (trust_id)",
       "ANALYZE {{ this }}"
     ]
   )
 }}
 
--- Get the latest property record for each asset
-WITH latest_property AS (
+WITH property_changes AS (
+    SELECT
+        -- Identifiers and dates
+        asset_num || '_' || property_num AS property_id,
+        reporting_date AS effective_date,
+        LEAD(reporting_date) OVER (
+            PARTITION BY asset_num, property_num 
+            ORDER BY reporting_date
+        ) AS next_change_date,
+        
+        -- Property attributes to track
+        property_name,
+        property_type_code,
+        property_status_code,
+        geo_id,
+        year_built,
+        square_feet,
+        unit_count,
+        trust,
+        company AS issuer,
+        
+        -- Track if key attributes changed from previous values
+        COALESCE(
+            LAG(property_type_code) OVER (
+                PARTITION BY asset_num, property_num 
+                ORDER BY reporting_date
+            ),
+            'first_row'
+        ) != property_type_code AS property_type_changed,
+        
+        COALESCE(
+            LAG(property_status_code) OVER (
+                PARTITION BY asset_num, property_num 
+                ORDER BY reporting_date
+            ),
+            'first_row'
+        ) != property_status_code AS property_status_changed,
+        
+        COALESCE(
+            LAG(square_feet) OVER (
+                PARTITION BY asset_num, property_num 
+                ORDER BY reporting_date
+            ),
+            -1
+        ) != square_feet AS square_feet_changed,
+        
+        COALESCE(
+            LAG(unit_count) OVER (
+                PARTITION BY asset_num, property_num 
+                ORDER BY reporting_date
+            ),
+            -1
+        ) != unit_count AS unit_count_changed,
+        
+        COALESCE(
+            LAG(geo_id) OVER (
+                PARTITION BY asset_num, property_num 
+                ORDER BY reporting_date
+            ),
+            'first_row'
+        ) != geo_id AS geo_id_changed,
+        
+        COALESCE(
+            LAG(trust) OVER (
+                PARTITION BY asset_num, property_num 
+                ORDER BY reporting_date
+            ),
+            'first_row'
+        ) != trust AS trust_changed
+        
+    FROM {{ ref('int_properties_cleaned') }}
+),
+
+versioned_properties AS (
     SELECT 
-        p.*,
-        z.zip_id,
-        ROW_NUMBER() OVER (
-            PARTITION BY asset_num 
-            ORDER BY reporting_period_end_date DESC
-        ) AS recency_rank
-    FROM {{ source('cmbs', 'properties') }} p
-    LEFT JOIN {{ ref('dim_geo_zip') }} z 
-      ON p.property_zip = z.zip_code
+        property_id,
+        effective_date,
+        -- End date is either the next change or infinity
+        COALESCE(next_change_date, '9999-12-31'::date) AS end_date,
+        property_name,
+        property_type_code,
+        property_status_code,
+        geo_id,
+        year_built,
+        square_feet,
+        unit_count,
+        trust,
+        issuer
+    FROM property_changes
+    WHERE 
+        -- Only create new version when key attributes change
+        property_type_changed OR
+        property_status_changed OR
+        square_feet_changed OR
+        unit_count_changed OR
+        geo_id_changed OR
+        trust_changed
 )
 
 SELECT
-    -- Primary key
-    asset_num AS property_id,
+    -- SCD Type 2 fields
+    vp.property_id,
+    vp.effective_date,
+    vp.end_date,
     
     -- Property details
-    property_name,
-    property_address,
-    zip_id,
-    
-    -- Property characteristics
-    property_type_code,
-    
+    vp.property_name,
+    vp.property_type_code,
     -- Classification by property type
     CASE 
-        WHEN property_type_code = 'RT' THEN 'Retail'
-        WHEN property_type_code = 'OF' THEN 'Office'
-        WHEN property_type_code = 'MF' THEN 'Multifamily'
-        WHEN property_type_code = 'IN' THEN 'Industrial'
-        WHEN property_type_code = 'HC' THEN 'Healthcare'
-        WHEN property_type_code = 'LO' THEN 'Lodging/Hotel'
-        WHEN property_type_code = 'MU' THEN 'Mixed Use'
-        WHEN property_type_code = 'SS' THEN 'Self Storage'
-        WHEN property_type_code = 'WH' THEN 'Warehouse'
-        WHEN property_type_code = 'MH' THEN 'Mobile Home'
+        WHEN vp.property_type_code = 'RT' THEN 'Retail'
+        WHEN vp.property_type_code = 'OF' THEN 'Office'
+        WHEN vp.property_type_code = 'MF' THEN 'Multifamily'
+        WHEN vp.property_type_code = 'IN' THEN 'Industrial'
+        WHEN vp.property_type_code = 'HC' THEN 'Healthcare'
+        WHEN vp.property_type_code = 'LO' THEN 'Lodging/Hotel'
+        WHEN vp.property_type_code = 'MU' THEN 'Mixed Use'
+        WHEN vp.property_type_code = 'SS' THEN 'Self Storage'
+        WHEN vp.property_type_code = 'WH' THEN 'Warehouse'
+        WHEN vp.property_type_code = 'MH' THEN 'Mobile Home'
         ELSE 'Other'
     END AS property_type_description,
+    vp.property_status_code,
+    vp.year_built,
+    vp.square_feet,
+    vp.unit_count,
+    vp.issuer,
     
-    -- Size metrics
-    year_built_num AS year_built,
-    units_beds_rooms_num AS unit_count,
-    net_rentable_square_feet_num AS square_feet,
-    
-    -- Valuation
-    most_recent_valuation_amt AS current_valuation,
-    valuation_securitization_amt AS securitization_valuation,
-    
-    -- Occupancy
-    most_recent_physical_occupancy_pct AS current_occupancy_pct,
-    physical_occupancy_securitization_pct AS securitization_occupancy_pct,
-    
-    -- Status
-    property_status_code,
-    
-    -- Tenant information
-    largest_tenant,
-    second_largest_tenant,
-    third_largest_tenant,
-    
-    -- Financial metrics - most recent
-    most_recent_revenue_amt AS current_revenue,
-    COALESCE(operating_expenses_amt, 0) AS current_expenses,
-    most_recent_net_operating_income_amt AS current_noi,
-    most_recent_debt_service_amt AS current_dscr,
-    
-    -- Financial metrics - securitization
-    revenue_securitization_amt AS securitization_revenue,
-    operating_expenses_securitization_amt AS securitization_expenses,
-    net_operating_income_securitization_amt AS securitization_noi,
-    debt_service_coverage_net_operating_income_securitization_pct AS securitization_dscr,
-    
-    -- Metadata
-    trust,
-    company AS issuer,
-    reporting_period_end_date AS reporting_date,
-    CURRENT_TIMESTAMP AS updated_at
-FROM latest_property
-WHERE recency_rank = 1 
+    -- Foreign keys
+    dt.trust_id,
+    vp.geo_id
+FROM versioned_properties vp
+JOIN {{ ref('dim_trust') }} dt ON vp.trust = dt.trust_name 

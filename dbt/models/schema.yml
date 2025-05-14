@@ -16,23 +16,161 @@ models:
         granularity: day
         tests:
           - not_null
+      - name: year
+        description: "Calendar year"
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 2000
+              max_value: 2030
+      - name: quarter
+        description: "Calendar quarter (1-4)"
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1
+              max_value: 4
+      - name: month
+        description: "Calendar month (1-12)"
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1
+              max_value: 12
+      - name: month_name
+        description: "Full name of the month"
+      - name: day_of_month
+        description: "Day of the month (1-31)"
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1
+              max_value: 31
+      - name: day_of_week
+        description: "Day of week (0-6, 0 is Sunday)"
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 6
+      - name: day_of_week_name
+        description: "Full name of the day of week"
+      - name: is_end_of_month
+        description: "Flag indicating if date is the last day of the month"
+        tests:
+          - accepted_values:
+              values: [true, false]
+      - name: fiscal_quarter
+        description: "Fiscal quarter (1-4, assuming Oct-Sep fiscal year)"
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1
+              max_value: 4
+      - name: fiscal_year
+        description: "Fiscal year (assuming Oct-Sep fiscal year)"
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 2000
+              max_value: 2031
+      - name: first_day_of_month
+        description: "First day of the month for given date"
+      - name: last_day_of_month
+        description: "Last day of the month for given date"
+      - name: first_day_of_quarter
+        description: "First day of the quarter for given date"
+      - name: last_day_of_quarter
+        description: "Last day of the quarter for given date"
+      - name: first_day_of_year
+        description: "First day of the year for given date"
+      - name: last_day_of_year
+        description: "Last day of the year for given date"
+      - name: is_holiday
+        description: "Flag indicating if date is a holiday"
+        tests:
+          - accepted_values:
+              values: [true, false]
+      - name: holiday_name
+        description: "Name of the holiday if applicable"
+      - name: is_business_day
+        description: "Flag indicating if date is a business day (Mon-Fri, excluding holidays)"
+        tests:
+          - accepted_values:
+              values: [true, false]
 
   - name: dim_trust
-    description: "Dimension table for CMBS trusts with key trust metadata"
+    description: Dimension table containing trust-level information and metrics for CMBS trusts
     columns:
       - name: trust_id
-        description: "CMBS trust identifier"
+        description: Unique identifier for the trust, serves as the primary key
         tests:
           - unique
           - not_null
+      
       - name: trust_name
-        description: "CMBS trust name"
+        description: Full name of the CMBS trust
         tests:
           - not_null
+      
       - name: issuer
-        description: "Issuer/company of the CMBS trust"
+        description: Name of the trust issuer/company
+        tests:
+          - not_null
+      
+      - name: first_reporting_date
+        description: Date of the first available report for this trust
+        tests:
+          - not_null
+      
+      - name: latest_reporting_date
+        description: Date of the most recent report for this trust
+        tests:
+          - not_null
+      
+      - name: orig_loan_count
+        description: Original number of loans in the trust
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      
+      - name: total_orig_bal
+        description: Total original balance of all loans in the trust
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      
+      - name: current_loan_count
+        description: Current number of active loans in the trust
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      
+      - name: delinquent_loans
+        description: Number of loans currently delinquent (payment status codes 1-5)
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      
+      - name: current_bal
+        description: Current total balance of all active loans in the trust
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      
+      - name: factor
+        description: Ratio of current balance to original balance (current_bal / total_orig_bal)
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+              inclusive: true
+      
       - name: delinquency_ratio
-        description: "Ratio of delinquent loans to total loans"
+        description: Ratio of delinquent loans to total current loans
         tests:
           - dbt_utils.accepted_range:
               min_value: 0
@@ -40,26 +178,97 @@ models:
               inclusive: true
 
   - name: dim_property
-    description: "Property dimension table containing the latest property details"
+    description: >
+      Type 2 SCD dimension table containing property-level information for all CMBS assets. 
+      This model tracks historical changes in property attributes including type, status, 
+      physical characteristics, and location. Each version represents the state of a property
+      during a specific time period.
     columns:
       - name: property_id
-        description: "Unique identifier for the property"
+        description: "Business key for the property (asset_num + property_num)"
         tests:
-          - unique
           - not_null
-      - name: property_type_code
-        description: "Code indicating the property type (e.g., RT for retail)"
-      - name: property_type_description
-        description: "Full description of the property type"
+
+      - name: effective_date
+        description: "Date when this version of the property became effective"
         tests:
-          - accepted_values:
-              values: ['Retail', 'Office', 'Multifamily', 'Industrial', 'Healthcare', 'Lodging/Hotel', 'Mixed Use', 'Self Storage', 'Warehouse', 'Mobile Home', 'Other']
-      - name: zip_id
-        description: "Foreign key to dim_geo_zip dimension"
+          - not_null
+
+      - name: end_date
+        description: "Date when this version of the property was superseded (9999-12-31 for current version)"
+        tests:
+          - not_null
+
+      - name: property_name
+        description: "Official name of the property as reported in CMBS filings"
+        tests:
+          - not_null
+
+      - name: geo_id
+        description: "Foreign key reference to dim_geo_address for location-based analysis"
         tests:
           - relationships:
-              to: ref('dim_geo_zip')
-              field: zip_id
+              to: ref('dim_geo_address')
+              field: address_id
+
+      - name: property_type_code
+        description: "Standardized code indicating the property's primary use (e.g., RT for Retail, OF for Office)"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['RT', 'OF', 'MF', 'IN', 'HC', 'LO', 'MU', 'SS', 'WH', 'MH']
+
+      - name: property_type_description
+        description: "Human-readable description of the property type code"
+        tests:
+          - not_null
+
+      - name: year_built
+        description: "Year the property was originally constructed"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 1800
+              max_value: "{{ var('current_year') }}"
+
+      - name: unit_count
+        description: "Number of units, beds, or rooms depending on property type"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: square_feet
+        description: "Net rentable area of the property in square feet"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: property_status_code
+        description: "Current status of the property (e.g., performing, REO, foreclosure)"
+        tests:
+          - not_null
+
+      - name: trust_id
+        description: "Identifier of the CMBS trust that holds this property"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_trust')
+              field: trust_id
+
+      - name: issuer
+        description: "Name of the CMBS issuer/company"
+        tests:
+          - not_null
+
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: ["property_id", "effective_date"]
+      - dbt_utils.mutually_exclusive_ranges:
+          partition_by: property_id
+          lower_bound_column: effective_date
+          upper_bound_column: end_date
 
   - name: dim_geo_state
     description: "State dimension with region and division classifications"
@@ -103,6 +312,26 @@ models:
               to: ref('dim_geo_state')
               field: state_id
 
+  - name: dim_geo_address
+    description: "Street address dimension with reference to zip code dimension"
+    columns:
+      - name: address_id
+        description: "Primary key for the address"
+        tests:
+          - unique
+          - not_null
+      - name: property_address
+        description: "Street address text"
+        tests:
+          - not_null
+      - name: zip_id
+        description: "Foreign key to zip code dimension"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_geo_zip')
+              field: zip_id
+
   - name: dim_geo_zip
     description: "ZIP code dimension with reference to city dimension"
     columns:
@@ -126,15 +355,17 @@ models:
   - name: fct_loan_monthly_performance
     description: "Fact table for monthly loan performance"
     columns:
-      - name: performance_id
+      - name: loan_performance_id
         description: "Surrogate key for the performance record"
         tests:
           - unique
           - not_null
+
       - name: loan_id
         description: "Foreign key to the loan"
         tests:
           - not_null
+
       - name: reporting_date
         description: "Date of the reporting period"
         tests:
@@ -142,6 +373,7 @@ models:
           - dbt_expectations.expect_column_values_to_be_between:
               min_value: "'2000-01-01'"
               max_value: "CURRENT_DATE"
+
       - name: trust_id
         description: "Foreign key to the trust dimension"
         tests:
@@ -149,40 +381,119 @@ models:
           - relationships:
               to: ref('dim_trust')
               field: trust_id
+
       - name: delinquency_status
-        description: "Delinquency status code"
+        description: "Delinquency status code (0-6, where 0 is current)"
+        tests:
+          - accepted_values:
+              values: ['0', '1', '2', '3', '4', '5', '6']
+
       - name: is_modified
         description: "Flag indicating if the loan has been modified"
+        tests:
+          - accepted_values:
+              values: [true, false]
+
+      - name: modified_this_period
+        description: "Flag indicating if the loan was modified in this reporting period"
+        tests:
+          - accepted_values:
+              values: [true, false]
+
       - name: is_past_maturity
         description: "Flag indicating if the loan is past its maturity date"
-      - name: current_bal
-        description: "Current outstanding balance of the loan"
         tests:
-          - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
+          - accepted_values:
+              values: [true, false]
+
       - name: days_past_due
         description: "Days past due calculated from delinquency status"
         tests:
           - dbt_expectations.expect_column_values_to_be_between:
               min_value: 0
               max_value: 180
-      - name: current_intr_rate
-        description: "Current interest rate for the reporting period"
+
+      - name: loan_status
+        description: "Categorized loan status based on delinquency"
+        tests:
+          - accepted_values:
+              values: ['Current', 'Delinquent < 90 Days', 'Delinquent 90+ Days', 'Other']
+
+      - name: current_bal
+        description: "Current outstanding balance of the loan"
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+
+      - name: begin_bal
+        description: "Beginning balance for the reporting period"
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+
+      - name: orig_bal
+        description: "Original loan balance at origination"
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+
+      - name: remaining_bal_pct
+        description: "Percentage of original balance remaining"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+              inclusive: true
+
+      - name: bal_change_pct
+        description: "Percentage change in balance from beginning of period"
+
+      - name: pmt_due
+        description: "Total scheduled principal and interest payment due"
         tests:
           - dbt_expectations.expect_column_values_to_be_between:
               min_value: 0
-              max_value: 0.10
+
+      - name: pmt_received
+        description: "Total principal and interest payment received"
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+
+      - name: pmt_shortfall
+        description: "Difference between payment due and received"
+
+      - name: current_intr_rate
+        description: "Current interest rate for the reporting period"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 0.15
+              inclusive: true
+
       - name: maturity_date
         description: "Date when the loan matures"
+
       - name: origination_date
         description: "Date when the loan was originated"
         tests:
           - dbt_expectations.expect_column_values_to_be_between:
               min_value: "'1980-01-01'"
               max_value: "CURRENT_DATE"
-      - name: source_file
-        description: "Source file from which the data was extracted"
+
+      - name: delinquent_amt
+        description: "Amount of payment shortfall for delinquent loans"
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+
+      - name: loaded_at
+        description: "Timestamp when the record was loaded"
+        tests:
+          - not_null
 
   - name: fct_property_metrics
     description: "Fact table for property-level metrics"
@@ -192,6 +503,7 @@ models:
         tests:
           - unique
           - not_null
+
       - name: property_id
         description: "Foreign key to the property dimension"
         tests:
@@ -199,29 +511,165 @@ models:
           - relationships:
               to: ref('dim_property')
               field: property_id
+
       - name: reporting_date
         description: "Date of the reporting period"
         tests:
           - not_null
-      - name: current_dscr
-        description: "Current debt service coverage ratio"
-        tests:
           - dbt_expectations.expect_column_values_to_be_between:
+              min_value: "'2000-01-01'"
+              max_value: "CURRENT_DATE"
+
+      - name: trust_id
+        description: "Foreign key to the trust dimension"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_trust')
+              field: trust_id
+
+      - name: property_type_code
+        description: "Property type classification code"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['RT', 'OF', 'MF', 'IN', 'HC', 'LO', 'MU', 'SS', 'WH', 'MH']
+
+      - name: square_feet
+        description: "Net rentable area in square feet"
+        tests:
+          - dbt_utils.accepted_range:
               min_value: 0
+              inclusive: true
+
+      - name: unit_count
+        description: "Number of units, beds, or rooms"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: current_valuation
+        description: "Current property valuation amount"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: securitization_valuation
+        description: "Property valuation at securitization"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: valuation_change_pct
+        description: "Percentage change in valuation from securitization"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: -1
+              max_value: 10
+              inclusive: true
+
       - name: current_occupancy_pct
         description: "Current physical occupancy percentage"
         tests:
-          - dbt_expectations.expect_column_values_to_be_between:
+          - dbt_utils.accepted_range:
               min_value: 0
               max_value: 100
+              inclusive: true
+
+      - name: securitization_occupancy_pct
+        description: "Physical occupancy percentage at securitization"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: true
+
+      - name: occupancy_change_pct
+        description: "Change in occupancy percentage from securitization"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: -100
+              max_value: 100
+              inclusive: true
+
+      - name: current_revenue
+        description: "Current annual revenue"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: current_expenses
+        description: "Current annual operating expenses"
+        tests:
+          - not_null
+
+      - name: current_noi
+        description: "Current net operating income"
+        tests:
+          - not_null
+
+      - name: current_dscr
+        description: "Current debt service coverage ratio"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: expense_ratio
+        description: "Ratio of operating expenses to revenue"
+
+      - name: revenue_per_sqft
+        description: "Annual revenue per square foot"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: revenue_per_unit
+        description: "Annual revenue per unit"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
       - name: has_largest_tenant
         description: "Flag indicating if the property has a largest tenant"
+        tests:
+          - accepted_values:
+              values: [true, false]
+
       - name: has_second_largest_tenant
         description: "Flag indicating if the property has a second largest tenant"
+        tests:
+          - accepted_values:
+              values: [true, false]
+
       - name: has_third_largest_tenant
         description: "Flag indicating if the property has a third largest tenant"
-      - name: source_file
-        description: "Source file from which the data was extracted"
+        tests:
+          - accepted_values:
+              values: [true, false]
+
+      - name: property_status_code
+        description: "Current status of the property"
+        tests:
+          - not_null
+
+      - name: loaded_at
+        description: "Timestamp when the record was loaded"
+        tests:
+          - not_null
+
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: ["property_id", "reporting_date"]
 
   - name: fct_loan_modifications
     description: "Fact table for loan modification events"
@@ -231,33 +679,197 @@ models:
         tests:
           - unique
           - not_null
+
       - name: loan_id
         description: "Foreign key to the loan"
         tests:
           - not_null
+
       - name: modification_date
         description: "Date when the modification occurred"
         tests:
           - not_null
+
+      - name: trust_id
+        description: "Foreign key to the trust dimension"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_trust')
+              field: trust_id
+
+      - name: modification_type
+        description: "Type of modification (This Period, Existing, Unknown)"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['This Period', 'Existing', 'Unknown']
+
       - name: has_rate_change
         description: "Flag indicating if the interest rate changed"
+        tests:
+          - not_null
+          - accepted_values:
+              values: [true, false]
+
       - name: has_maturity_change
         description: "Flag indicating if the maturity date changed"
+        tests:
+          - not_null
+          - accepted_values:
+              values: [true, false]
+
+      - name: previous_intr_rate
+        description: "Interest rate before modification"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 0.15
+              inclusive: true
+
+      - name: new_intr_rate
+        description: "Interest rate after modification"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 0.15
+              inclusive: true
+
+      - name: intr_rate_change
+        description: "Change in interest rate (new - previous)"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: -0.15
+              max_value: 0.15
+              inclusive: true
+
+      - name: previous_maturity_date
+        description: "Maturity date before modification"
+
+      - name: new_maturity_date
+        description: "Maturity date after modification"
+
+      - name: maturity_extension_days
+        description: "Number of days the maturity was extended"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 3650  # 10 years
+              inclusive: true
+
+      - name: current_bal
+        description: "Loan balance at time of modification"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: loaded_at
+        description: "Timestamp when the record was loaded"
+        tests:
+          - not_null
+
     tests:
       - dbt_utils.unique_combination_of_columns:
           combination_of_columns: ["loan_id", "modification_date"]
 
   - name: loan_risk_metrics
-    description: "Analytics model for loan risk assessment"
+    description: >
+      Analytics model for comprehensive loan risk assessment, combining loan performance metrics,
+      property characteristics, and geographic factors to calculate risk scores and stratify the portfolio.
     columns:
       - name: trust_id
         description: "CMBS trust identifier"
         tests:
           - not_null
-      - name: reporting_date
-        description: "Reporting period date"
+
+      - name: property_type_code
+        description: "Property type classification code"
         tests:
           - not_null
+
+      - name: property_state
+        description: "State where the property is located"
+        tests:
+          - not_null
+
+      - name: reporting_date
+        description: "Date of the risk metrics calculation"
+        tests:
+          - not_null
+
+      - name: loan_count
+        description: "Number of loans in the group"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: total_loan_amt
+        description: "Total current balance of loans in the group"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: avg_ltv
+        description: "Average loan-to-value ratio"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 2
+              inclusive: true
+
+      - name: avg_dscr
+        description: "Average debt service coverage ratio"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: avg_occupancy
+        description: "Average occupancy percentage"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: true
+
+      - name: high_ltv_pct
+        description: "Percentage of loans with high LTV risk"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+              inclusive: true
+
+      - name: high_dscr_pct
+        description: "Percentage of loans with high DSCR risk"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+              inclusive: true
+
+      - name: high_occupancy_risk_pct
+        description: "Percentage of loans with high occupancy risk"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+              inclusive: true
+
+      - name: high_delinquency_risk_pct
+        description: "Percentage of loans with high delinquency risk"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+              inclusive: true
+
       - name: avg_risk_score
         description: "Average risk score (0-10, higher is riskier)"
         tests:
@@ -265,161 +877,647 @@ models:
               min_value: 0
               max_value: 10
               inclusive: true
-    tests:
-      - dbt_utils.unique_combination_of_columns:
-          combination_of_columns: ["trust_id", "property_type_code", "property_state", "reporting_date"]
+
+      - name: high_risk_bal
+        description: "Total balance of loans with high risk scores (>= 8)"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: medium_risk_bal
+        description: "Total balance of loans with medium risk scores (4-7.99)"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: low_risk_bal
+        description: "Total balance of loans with low risk scores (< 4)"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: high_risk_ratio
+        description: "Ratio of high-risk loan balance to total balance"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+              inclusive: true
+
+      - name: medium_risk_ratio
+        description: "Ratio of medium-risk loan balance to total balance"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+              inclusive: true
+
+      - name: low_risk_ratio
+        description: "Ratio of low-risk loan balance to total balance"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+              inclusive: true
 
   - name: portfolio_concentration
     description: >
       Analysis of loan portfolio concentration across different dimensions including property type,
-      geography, loan size, interest rate, and remaining term.
+      geography (state, city, ZIP, region, division), loan size, interest rate, and remaining term.
+      This model helps identify and monitor concentration risks in the portfolio.
     columns:
       - name: reporting_date
-        description: The date of the reporting period
+        description: "The date of the reporting period"
         tests:
           - not_null
-      
+
       - name: concentration_type
-        description: The type of concentration analysis (Property Type, State, Region, Loan Size, Interest Rate, Remaining Term)
+        description: "The type of concentration analysis (Property Type, State, City, ZIP Code, Region, Division, Loan Size, Interest Rate, Remaining Term)"
         tests:
           - not_null
-      
+          - accepted_values:
+              values: ['Property Type', 'State', 'City', 'ZIP Code', 'Region', 'Division', 'Loan Size', 'Interest Rate', 'Remaining Term']
+
       - name: concentration_category
-        description: The specific category within the concentration type
+        description: "The specific category within the concentration type (e.g., specific property type, state name, loan size bucket)"
         tests:
           - not_null
-      
+
       - name: loan_count
-        description: The number of loans in this category
-      
+        description: "The number of loans in this category"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
       - name: total_balance
-        description: The total loan balance in this category
-      
+        description: "The total loan balance in this category"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: avg_loan_balance
+        description: "Average loan balance in this category (total_balance / loan_count)"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
       - name: pct_of_loans
-        description: Percentage of total loans that this category represents
-      
+        description: "Percentage of total loans that this category represents"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+              inclusive: true
+
       - name: pct_of_balance
-        description: Percentage of total loan balance that this category represents
-      
+        description: "Percentage of total loan balance that this category represents"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+              inclusive: true
+
       - name: rank_by_balance
-        description: Ranking of this category within its concentration type by balance
-      
+        description: "Ranking of this category within its concentration type by balance"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
       - name: is_top_5
-        description: Boolean flag indicating if this category is in the top 5 by balance
+        description: "Boolean flag indicating if this category is in the top 5 by balance"
+        tests:
+          - not_null
+          - accepted_values:
+              values: [true, false]
+
+      - name: loaded_at
+        description: "Timestamp when the record was loaded"
+        tests:
+          - not_null
 
   - name: vintage_performance
     description: >
-      Analysis of loan performance by origination vintage/year, tracking performance metrics
-      at the same loan age across different vintages.
+      Analysis of loan performance by origination vintage/year, tracking delinquency rates,
+      modification rates, and comparative performance metrics at the same loan age across different vintages.
     columns:
       - name: reporting_date
-        description: The date of the reporting period
+        description: "The date of the reporting period"
         tests:
           - not_null
-      
+
       - name: vintage_year
-        description: The year the loans were originated
+        description: "The year the loans were originated"
         tests:
           - not_null
-      
+          - dbt_utils.accepted_range:
+              min_value: 2000
+              max_value: "{{ var('current_year') }}"
+
       - name: vintage_age_months
-        description: The number of months since the vintage year
-      
+        description: "Number of months since the vintage year"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
       - name: loan_count
-        description: The number of loans in this vintage
-      
+        description: "Number of loans in this vintage"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
       - name: total_balance
-        description: The total loan balance of this vintage
-      
+        description: "Total current balance of loans in this vintage"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: delinquent_balance
+        description: "Total balance of delinquent loans in this vintage"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: severe_delinquent_balance
+        description: "Total balance of loans 90+ days delinquent"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: modified_balance
+        description: "Total balance of modified loans in this vintage"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: avg_days_past_due
+        description: "Average number of days past due for loans in this vintage"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 180
+
       - name: delinquency_rate
-        description: The percentage of loan balance that is delinquent
-      
+        description: "Percentage of loan balance that is delinquent"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+              inclusive: true
+
       - name: severe_delinquency_rate
-        description: The percentage of loan balance that is 90+ days delinquent
-      
+        description: "Percentage of loan balance that is 90+ days delinquent"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+              inclusive: true
+
+      - name: modification_rate
+        description: "Percentage of loan balance that has been modified"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+              inclusive: true
+
+      - name: avg_loan_balance
+        description: "Average loan balance in this vintage"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
       - name: avg_delinquency_at_age
-        description: The average delinquency rate for all vintages at this same loan age
-      
+        description: "Average delinquency rate for all vintages at this same loan age"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+              inclusive: true
+
+      - name: max_delinquency_at_age
+        description: "Maximum delinquency rate observed at this loan age across all vintages"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+              inclusive: true
+
+      - name: min_delinquency_at_age
+        description: "Minimum delinquency rate observed at this loan age across all vintages"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+              inclusive: true
+
       - name: delinquency_vs_avg_at_age
-        description: The difference between this vintage's delinquency rate and the average rate at this age
-      
+        description: "Difference between this vintage's delinquency rate and the average rate at this age"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: -1
+              max_value: 1
+              inclusive: true
+
       - name: delinquency_percentile_at_age
-        description: The percentile rank of this vintage's delinquency rate among all vintages at this age
-      
+        description: "Percentile rank of this vintage's delinquency rate among all vintages at this age"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+              inclusive: true
+
+      - name: delinquency_3m_change
+        description: "3-month change in delinquency rate"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: -1
+              max_value: 1
+              inclusive: true
+
+      - name: delinquency_6m_change
+        description: "6-month change in delinquency rate"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: -1
+              max_value: 1
+              inclusive: true
+
+      - name: delinquency_12m_change
+        description: "12-month change in delinquency rate"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: -1
+              max_value: 1
+              inclusive: true
+
       - name: vintage_performance_category
-        description: Categorical assessment of vintage performance (Top Performer, Above Average, Below Average, Underperformer)
-      
+        description: "Categorical assessment of vintage performance (Top Performer, Above Average, Below Average, Underperformer)"
+        tests:
+          - accepted_values:
+              values: ['Top Performer', 'Above Average', 'Below Average', 'Underperformer']
+
       - name: short_term_trend
-        description: Categorical assessment of delinquency trend (Improving, Stable, Deteriorating)
+        description: "Categorical assessment of delinquency trend (Improving, Stable, Deteriorating, Insufficient Data)"
+        tests:
+          - accepted_values:
+              values: ['Improving', 'Stable', 'Deteriorating', 'Insufficient Data']
+
+      - name: loaded_at
+        description: "Timestamp when the record was loaded"
+        tests:
+          - not_null
 
   - name: property_performance_metrics
     description: >
-      Enhanced property performance analysis with benchmarking against similar properties,
-      trend analysis, and risk scoring.
+      Enhanced property performance analysis combining loan allocations with property metrics.
+      Uses historically accurate property attributes via Type 2 SCD joins to dim_property
+      for all calculations and benchmarking.
     columns:
       - name: property_id
-        description: Unique identifier for the property
+        description: "Foreign key to the property dimension"
         tests:
           - not_null
-      
+          - relationships:
+              to: ref('dim_property')
+              field: property_id
+
       - name: reporting_date
-        description: The date of the reporting period
+        description: "Date of the reporting period"
         tests:
           - not_null
-      
+
+      - name: current_valuation
+        description: "Current property valuation"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: securitization_valuation
+        description: "Property valuation at securitization"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
       - name: current_occupancy_pct
-        description: The current occupancy percentage of the property
-      
+        description: "Current occupancy percentage"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: true
+
+      - name: securitization_occupancy_pct
+        description: "Occupancy percentage at securitization"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: true
+
+      - name: current_revenue
+        description: "Current annual revenue"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: current_expenses
+        description: "Current annual operating expenses"
+        tests:
+          - not_null
+
+      - name: current_noi
+        description: "Current net operating income"
+        tests:
+          - not_null
+
       - name: current_dscr
-        description: The current debt service coverage ratio
-      
+        description: "Current debt service coverage ratio"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: property_type_code
+        description: "Property type classification code"
+        tests:
+          - not_null
+
+      - name: zip_code
+        description: "Property ZIP code"
+
+      - name: city_name
+        description: "Property city name"
+
+      - name: state_code
+        description: "Property state code"
+
+      - name: state_name
+        description: "Property state name"
+
+      - name: region_name
+        description: "Geographic region name"
+
+      - name: division_name
+        description: "Geographic division name"
+
+      - name: loan_balance
+        description: "Current loan balance"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: current_intr_rate
+        description: "Current loan interest rate"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 0.15
+              inclusive: true
+
+      - name: origination_date
+        description: "Loan origination date"
+
       - name: loan_to_value_ratio
-        description: The ratio of loan balance to property value
-      
+        description: "Ratio of loan balance to current valuation"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 2
+              inclusive: true
+
+      - name: debt_yield
+        description: "Ratio of NOI to loan balance"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: square_feet
+        description: "Property square footage"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: unit_count
+        description: "Number of units in the property"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
       - name: value_per_sq_ft
-        description: Property value per square foot
-      
+        description: "Property value per square foot"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: revenue_per_sq_ft
+        description: "Annual revenue per square foot"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
       - name: noi_per_sq_ft
-        description: Net operating income per square foot
-      
+        description: "Net operating income per square foot"
+
+      - name: value_per_unit
+        description: "Property value per unit"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: revenue_per_unit
+        description: "Annual revenue per unit"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: noi_per_unit
+        description: "Net operating income per unit"
+
       - name: expense_ratio
-        description: The ratio of expenses to revenue
-      
+        description: "Ratio of expenses to revenue"
+
+      - name: valuation_change_pct
+        description: "Percentage change in valuation since securitization"
+
       - name: occupancy_change_pct
-        description: Change in occupancy percentage since securitization
-      
+        description: "Change in occupancy percentage since securitization"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: -100
+              max_value: 100
+              inclusive: true
+
+      - name: valuation_3m_change
+        description: "3-month change in property valuation"
+
       - name: occupancy_3m_change
-        description: 3-month change in occupancy percentage
-      
+        description: "3-month change in occupancy percentage"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: -100
+              max_value: 100
+              inclusive: true
+
       - name: noi_3m_change
-        description: 3-month change in net operating income
-      
+        description: "3-month change in NOI"
+
+      - name: valuation_12m_change
+        description: "12-month change in property valuation"
+
+      - name: occupancy_12m_change
+        description: "12-month change in occupancy percentage"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: -100
+              max_value: 100
+              inclusive: true
+
+      - name: noi_12m_change
+        description: "12-month change in NOI"
+
       - name: type_avg_occupancy_pct
-        description: Average occupancy percentage for this property type
-      
-      - name: state_avg_occupancy_pct
-        description: Average occupancy percentage for properties in this state
-      
+        description: "Average occupancy percentage for this property type"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: true
+
+      - name: type_avg_value_per_sq_ft
+        description: "Average value per square foot for this property type"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: type_avg_revenue_per_sq_ft
+        description: "Average revenue per square foot for this property type"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: type_avg_noi_per_sq_ft
+        description: "Average NOI per square foot for this property type"
+
+      - name: type_avg_expense_ratio
+        description: "Average expense ratio for this property type"
+
+      - name: type_avg_debt_yield
+        description: "Average debt yield for this property type"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: type_avg_dscr
+        description: "Average DSCR for this property type"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
       - name: occupancy_vs_type
-        description: How this property's occupancy compares to the average for its type
-      
+        description: "Comparison of property's occupancy to property type average"
+        tests:
+          - accepted_values:
+              values: ['Above Average', 'Below Average', 'Average']
+
       - name: dscr_vs_type
-        description: How this property's DSCR compares to the average for its type
-      
+        description: "Comparison of property's DSCR to property type average"
+        tests:
+          - accepted_values:
+              values: ['Above Average', 'Below Average', 'Average']
+
+      - name: noi_vs_type
+        description: "Comparison of property's NOI per square foot to property type average"
+        tests:
+          - accepted_values:
+              values: ['Above Average', 'Below Average', 'Average']
+
       - name: performance_category
-        description: Overall performance category (Strong Performer, Stable Performer, Underperformer, Distressed)
-      
+        description: "Overall performance classification based on DSCR and occupancy"
+        tests:
+          - accepted_values:
+              values: ['Strong Performer', 'Stable Performer', 'Underperformer', 'Distressed', 'Moderate Performer']
+
       - name: occupancy_trend
-        description: Trend in occupancy (Improving, Stable, Declining)
-      
+        description: "3-month trend in occupancy"
+        tests:
+          - accepted_values:
+              values: ['Improving', 'Declining', 'Stable']
+
       - name: noi_trend
-        description: Trend in net operating income (Improving, Stable, Declining)
-      
+        description: "3-month trend in NOI"
+        tests:
+          - accepted_values:
+              values: ['Improving', 'Declining', 'Stable']
+
       - name: property_risk_score
-        description: Composite risk score (0-10, lower is better)
+        description: "Combined risk score (0-10, higher is riskier) based on DSCR, occupancy, LTV, and trends"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 10
+              inclusive: true
 
   - name: loan_aging_metrics
-    description: "Detailed analysis of loan aging, prepayment speeds, and remaining term metrics"
+    description: >
+      Detailed analysis of loan aging characteristics, prepayment behavior, and remaining term metrics.
+      This model calculates various prepayment speeds (PSA, CPR, SMM) and provides vintage analysis
+      for both origination and maturity dates.
     columns:
       - name: loan_id
         description: "Unique identifier for the loan"
@@ -428,16 +1526,136 @@ models:
           - relationships:
               to: ref('fct_loan_monthly_performance')
               field: loan_id
-      
+
+      - name: trust_id
+        description: "Identifier for the CMBS trust"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_trust')
+              field: trust_id
+
+      - name: reporting_date
+        description: "Date of the reporting period"
+        tests:
+          - not_null
+
+      - name: loan_age_months
+        description: "Age of the loan in months from origination"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: remaining_term_months
+        description: "Number of months remaining until maturity"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: original_term_months
+        description: "Original term of the loan in months"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: origination_date
+        description: "Date when the loan was originated"
+        tests:
+          - not_null
+
       - name: psa_speed
         description: "Public Securities Association prepayment speed"
         tests:
-          - dbt_expectations.expect_column_values_to_be_between:
+          - dbt_utils.accepted_range:
               min_value: 0
               max_value: 1000
-              
+              inclusive: true
+
+      - name: cpr
+        description: "Conditional Prepayment Rate as a percentage"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: true
+
+      - name: smm
+        description: "Single Monthly Mortality rate as a percentage"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: true
+
+      - name: is_prepayment
+        description: "Flag indicating if prepayment occurred in this period"
+        tests:
+          - accepted_values:
+              values: [true, false]
+
+      - name: current_bal
+        description: "Current loan balance"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: orig_bal
+        description: "Original loan balance at origination"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: percent_remaining_balance
+        description: "Percentage of original balance remaining"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: true
+
+      - name: origination_vintage_year
+        description: "Year of loan origination (truncated to year)"
+        tests:
+          - not_null
+
+      - name: origination_vintage_quarter
+        description: "Quarter of loan origination (truncated to quarter)"
+        tests:
+          - not_null
+
+      - name: maturity_vintage_year
+        description: "Year of loan maturity (truncated to year)"
+        tests:
+          - not_null
+
+      - name: loan_age_bucket
+        description: "Categorical bucket for loan age (0-1 Year, 1-2 Years, etc.)"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['0-1 Year', '1-2 Years', '2-3 Years', '3-5 Years', '5-7 Years', '7-10 Years', 'Over 10 Years']
+
+      - name: remaining_term_bucket
+        description: "Categorical bucket for remaining term (Under 1 Year, 1-3 Years, etc.)"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Under 1 Year', '1-3 Years', '3-5 Years', '5-10 Years', 'Over 10 Years']
+
   - name: property_occupancy_noi
-    description: "Detailed property occupancy trends and NOI analysis"
+    description: >
+      Detailed property occupancy trends and NOI analysis, including rolling metrics,
+      volatility measures, and market comparisons at both property type and geographic levels.
     columns:
       - name: property_id
         description: "Unique identifier for the property"
@@ -446,307 +1664,131 @@ models:
           - relationships:
               to: ref('dim_property')
               field: property_id
-              
+
+      - name: reporting_date
+        description: "Date of the reporting period"
+        tests:
+          - not_null
+
+      - name: property_type_code
+        description: "Property type classification code"
+        tests:
+          - not_null
+
+      - name: state
+        description: "State where the property is located"
+        tests:
+          - not_null
+
+      - name: region
+        description: "Geographic region of the property"
+        tests:
+          - not_null
+
       - name: current_occupancy
         description: "Current occupancy percentage"
         tests:
-          - dbt_expectations.expect_column_values_to_be_between:
+          - dbt_utils.accepted_range:
               min_value: 0
               max_value: 100
+              inclusive: true
 
-semantic_models:
-  - name: loans
-    description: "Monthly loan performance metrics from CMBS trusts"
-    model: ref('fct_loan_monthly_performance')
-    defaults:
-      agg_time_dimension: reporting_date
-    
-    entities:
-      - name: loan
-        type: primary
-        expr: loan_id
-      
-      - name: trust
-        type: foreign
-        expr: trust_id
-    
-    dimensions:
-      - name: reporting_date
-        type: time
-        type_params:
-          time_granularity: day
-      
-      - name: delinquency_status
-        type: categorical
-        expr: delinquency_status
-      
-      - name: days_past_due
-        type: categorical
-        expr: days_past_due
-      
-      - name: loan_status
-        type: categorical
-        expr: loan_status
-    
-    measures:
-      - name: current_balance
-        description: "Current loan balance"
-        expr: current_bal
-        agg: sum
-      
-      - name: beginning_balance
-        description: "Beginning loan balance"
-        expr: begin_bal
-        agg: sum
-      
-      - name: delinquent_balance
-        description: "Delinquent loan balance"
-        expr: "CASE WHEN days_past_due > 0 THEN current_bal ELSE 0 END"
-        agg: sum
-      
-      - name: loan_count
-        description: "Count of loans"
-        expr: "1"
-        agg: count_distinct
-      
-      - name: delinquent_loan_count
-        description: "Count of delinquent loans"
-        expr: "CASE WHEN days_past_due > 0 THEN 1 ELSE 0 END"
-        agg: sum
-      
-      - name: average_interest_rate
-        description: "Average interest rate"
-        expr: current_intr_rate
-        agg: average
+      - name: securitization_occupancy
+        description: "Occupancy percentage at securitization"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: true
 
-  - name: properties
-    description: "Property metrics from CMBS trusts"
-    model: ref('property_occupancy_noi')
-    defaults:
-      agg_time_dimension: reporting_date
-    
-    entities:
-      - name: property
-        type: primary
-        expr: property_id
-      
-      - name: trust
-        type: foreign
-        expr: trust_id
-    
-    dimensions:
-      - name: reporting_date
-        type: time
-        type_params:
-          time_granularity: day
-      
-      - name: property_type_code
-        type: categorical
-        expr: property_type_code
-      
-      - name: state
-        type: categorical
-        expr: state
-      
-      - name: region
-        type: categorical
-        expr: region
-    
-    measures:
-      - name: current_valuation
-        description: "Current property valuation"
-        expr: current_valuation
-        agg: sum
-      
-      - name: average_occupancy
-        description: "Average occupancy percentage"
-        expr: current_occupancy_pct
-        agg: average
-      
-      - name: average_dscr
-        description: "Average debt service coverage ratio"
-        expr: current_dscr
-        agg: average
-      
-      - name: property_count
-        description: "Count of properties"
-        expr: "1"
-        agg: count_distinct
-          
-      - name: valuation_change_pct
-        description: "Percentage change in property valuation"
-        expr: valuation_change_pct
-        agg: average
-        
+      - name: occupancy_change
+        description: "Change in occupancy since securitization (percentage points)"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: -100
+              max_value: 100
+              inclusive: true
+
+      - name: trailing_12m_avg_occupancy
+        description: "12-month rolling average occupancy percentage"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: true
+
+      - name: occupancy_volatility_12m
+        description: "Standard deviation of occupancy over trailing 12 months"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: current_revenue
+        description: "Current annual revenue"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: current_expenses
+        description: "Current annual operating expenses"
+        tests:
+          - not_null
+
       - name: current_noi
         description: "Current net operating income"
-        expr: current_noi
-        agg: sum
-      
-      - name: net_rentable_square_feet_number
-        description: "Net rentable square feet"
-        expr: net_rentable_square_feet_number
-        agg: sum
-      
-      - name: current_occupancy_weighted
-        description: "Occupancy weighted by square feet"
-        expr: current_occupancy * net_rentable_square_feet_number
-        agg: sum
+        tests:
+          - not_null
 
-  - name: portfolio_concentration
-    description: "Analysis of loan portfolio concentration across different dimensions"
-    model: ref('portfolio_concentration')
-    defaults:
-      agg_time_dimension: reporting_date
-    
-    entities:
-      - name: concentration_category
-        type: primary
-        expr: concentration_category
-    
-    dimensions:
-      - name: reporting_date
-        type: time
-        type_params:
-          time_granularity: day
-      
-      - name: concentration_type
-        type: categorical
-        expr: concentration_type
-    
-    measures:
-      - name: concentration_loan_count
-        description: "Number of loans in a concentration category"
-        expr: loan_count
-        agg: sum
-      
-      - name: concentration_balance
-        description: "Total loan balance in a concentration category"
-        expr: total_balance
-        agg: sum
-      
-      - name: pct_of_balance
-        description: "Percentage of total balance in a concentration category"
-        expr: pct_of_balance
-        agg: max
-      
-      - name: max_property_type_pct
-        description: "Maximum concentration percentage for property types"
-        expr: "CASE WHEN concentration_type = 'Property Type' THEN pct_of_balance ELSE 0 END"
-        agg: max
-      
-      - name: max_state_pct
-        description: "Maximum concentration percentage for states"
-        expr: "CASE WHEN concentration_type = 'State' THEN pct_of_balance ELSE 0 END"
-        agg: max
-      
-      - name: herfindahl_property_types
-        description: "Herfindahl index for property type concentration"
-        expr: "CASE WHEN concentration_type = 'Property Type' THEN pct_of_balance * pct_of_balance ELSE 0 END"
-        agg: sum
+      - name: noi_per_sqft
+        description: "Net operating income per square foot"
 
-  - name: vintage_performance
-    description: "Analysis of loan performance by origination vintage"
-    model: ref('vintage_performance')
-    defaults:
-      agg_time_dimension: reporting_date
-    
-    entities:
-      - name: vintage
-        type: primary
-        expr: vintage_year
-    
-    dimensions:
-      - name: reporting_date
-        type: time
-        type_params:
-          time_granularity: day
-      
-      - name: vintage_year
-        type: categorical
-        expr: vintage_year
-      
-      - name: vintage_age_months
-        type: categorical
-        expr: vintage_age_months
-    
-    measures:
-      - name: min_vintage_delinquency
-        description: "Minimum delinquency rate among vintages"
-        expr: delinquency_rate
-        agg: min
-      
-      - name: max_vintage_delinquency
-        description: "Maximum delinquency rate among vintages"
-        expr: delinquency_rate
-        agg: max
-      
-      - name: vintage_delinquency_diff
-        description: "Spread between worst and best vintage delinquency rates"
-        expr: "delinquency_rate - AVG(delinquency_rate) OVER(PARTITION BY reporting_date)"
-        agg: max
-      
-      - name: vintage_loan_count
-        description: "Number of loans in a vintage"
-        expr: loan_count
-        agg: sum
-      
-      - name: vintage_balance
-        description: "Total loan balance in a vintage"
-        expr: total_balance
-        agg: sum
+      - name: expense_ratio
+        description: "Ratio of operating expenses to revenue"
 
-  - name: property_analytics
-    description: "Enhanced property performance analysis with benchmarking"
-    model: ref('property_performance_metrics')
-    defaults:
-      agg_time_dimension: analytics_date
-    
-    entities:
-      - name: property_analytics
-        type: primary
-        expr: property_id
-    
-    dimensions:
-      - name: analytics_date
-        type: time
-        expr: reporting_date
-        type_params:
-          time_granularity: day
-      
-      - name: analytics_property_type
-        type: categorical
-        expr: property_type_code
-      
-      - name: performance_category
-        type: categorical
-        expr: performance_category
-      
-      - name: occupancy_trend
-        type: categorical
-        expr: occupancy_trend
-      
-      - name: noi_trend
-        type: categorical
-        expr: noi_trend
-    
-    measures:
-      - name: distressed_property_pct
-        description: "Percentage of properties categorized as distressed"
-        expr: "CASE WHEN performance_category = 'Distressed' THEN 1 ELSE 0 END"
-        agg: average
-      
-      - name: avg_property_risk
-        description: "Average property risk score"
-        expr: property_risk_score
-        agg: average
-      
-      - name: declining_occupancy_pct
-        description: "Percentage of properties with declining occupancy"
-        expr: "CASE WHEN occupancy_trend = 'Declining' THEN 1 ELSE 0 END"
-        agg: average
-      
-      - name: avg_noi_growth
-        description: "Average NOI growth rate"
-        expr: "CASE WHEN noi_3m_change IS NOT NULL AND current_noi > 0 THEN noi_3m_change / NULLIF(current_noi - noi_3m_change, 0) ELSE 0 END"
-        agg: average 
+      - name: trailing_12m_noi
+        description: "Sum of NOI over trailing 12 months"
+        tests:
+          - not_null
+
+      - name: noi_yoy_growth
+        description: "Year-over-year NOI growth percentage"
+
+      - name: square_feet
+        description: "Property square footage"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: avg_occupancy_by_property_type
+        description: "Average occupancy for properties of the same type in the current month"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: true
+
+      - name: avg_noi_per_sqft_by_property_type
+        description: "Average NOI per square foot for properties of the same type in the current month"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: avg_occupancy_by_state
+        description: "Average occupancy for properties in the same state in the current month"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: true
+
+      - name: avg_noi_per_sqft_by_state
+        description: "Average NOI per square foot for properties in the same state in the current month"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true

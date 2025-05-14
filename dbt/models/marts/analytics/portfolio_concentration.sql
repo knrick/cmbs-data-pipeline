@@ -34,6 +34,7 @@ WITH loan_data AS (
         dp.property_type_code,
         
         -- Geography attributes properly sourced via snowflake schema
+        a.property_address,         -- from dim_geo_address
         z.zip_code,                 -- from dim_geo_zip
         c.city_name,                -- from dim_geo_city 
         s.state_code,               -- from dim_geo_state
@@ -71,12 +72,16 @@ WITH loan_data AS (
         END AS remaining_term_bucket
     FROM {{ ref('fct_loan_monthly_performance') }} lp
     -- Join to property dimension
-    LEFT JOIN {{ ref('dim_property') }} dp ON lp.loan_id = dp.property_id
-    -- Join to geographic dimensions via snowflake schema with proper hierarchy
-    LEFT JOIN {{ ref('dim_geo_zip') }} z ON dp.zip_id = z.zip_id
+    LEFT JOIN {{ ref('dim_property') }} dp 
+        ON lp.loan_id = dp.property_id
+        AND lp.reporting_date >= dp.effective_date 
+        AND lp.reporting_date < dp.end_date
+    -- Join to geographic dimensions via snowflake schema
+    LEFT JOIN {{ ref('dim_geo_address') }} a ON dp.geo_id = a.address_id
+    LEFT JOIN {{ ref('dim_geo_zip') }} z ON a.zip_id = z.zip_id
     LEFT JOIN {{ ref('dim_geo_city') }} c ON z.city_id = c.city_id
     LEFT JOIN {{ ref('dim_geo_state') }} s ON c.state_id = s.state_id
-    WHERE lp.reporting_date IS NOT NULL
+    WHERE lp.reporting_date IS NOT NULL AND NOT lp.is_past_maturity
     {% if is_incremental() %}
     AND lp.reporting_date >= (SELECT max(reporting_date) FROM {{ this }})
     {% endif %}
@@ -141,6 +146,19 @@ combined_concentrations AS (
     FROM loan_data
     WHERE zip_code IS NOT NULL
     GROUP BY reporting_date, zip_code
+    
+    UNION ALL
+    
+    -- Geographic Concentration by Address
+    SELECT
+        reporting_date,
+        'Address' AS concentration_type,
+        COALESCE(property_address, 'Unknown') || ', ' || COALESCE(city_name, '') || ', ' || COALESCE(state_code, '') AS concentration_category,
+        COUNT(DISTINCT loan_id) AS loan_count,
+        SUM(current_bal) AS total_balance
+    FROM loan_data
+    WHERE property_address IS NOT NULL
+    GROUP BY reporting_date, property_address, city_name, state_code
     
     UNION ALL
     
