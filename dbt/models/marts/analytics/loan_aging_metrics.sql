@@ -34,9 +34,8 @@ loan_age_metrics AS (
         -- Calculate loan age in months
         DATE_PART('month', AGE(perf.reporting_date, perf.origination_date)) + 
         DATE_PART('year', AGE(perf.reporting_date, perf.origination_date)) * 12 + 1 AS loan_age_months,
-        -- Calculate remaining term
-        DATE_PART('month', AGE(perf.maturity_date, perf.reporting_date)) + 
-        DATE_PART('year', AGE(perf.maturity_date, perf.reporting_date)) * 12 + 1 AS remaining_term_months,
+        -- Use months_to_maturity from loan performance
+        perf.months_to_maturity,
         -- Original term
         DATE_PART('month', AGE(perf.maturity_date, perf.origination_date)) + 
         DATE_PART('year', AGE(perf.maturity_date, perf.origination_date)) * 12 + 1 AS original_term_months,
@@ -64,7 +63,7 @@ prepayment_metrics AS (
         maturity_date,
         reporting_date,
         loan_age_months,
-        remaining_term_months,
+        months_to_maturity,
         original_term_months,
         origination_date,
         -- Calculate PSA (Public Securities Association) prepayment speed
@@ -92,7 +91,7 @@ SELECT
     DATE_TRUNC('year', origination_date) as origination_vintage_year,
     DATE_TRUNC('quarter', origination_date) as origination_vintage_quarter,
     -- Add maturity grouping
-    DATE_TRUNC('year', reporting_date + (remaining_term_months * INTERVAL '1 month')) as maturity_vintage_year,
+    DATE_TRUNC('year', reporting_date + (months_to_maturity * INTERVAL '1 month')) as maturity_vintage_year,
     -- Age buckets for analysis
     CASE 
         WHEN loan_age_months <= 12 THEN '0-1 Year'
@@ -105,10 +104,10 @@ SELECT
     END as loan_age_bucket,
     -- Remaining term buckets
     CASE 
-        WHEN remaining_term_months <= 12 THEN 'Under 1 Year'
-        WHEN remaining_term_months <= 36 THEN '1-3 Years'
-        WHEN remaining_term_months <= 60 THEN '3-5 Years'
-        WHEN remaining_term_months <= 120 THEN '5-10 Years'
+        WHEN months_to_maturity <= 12 THEN 'Under 1 Year'
+        WHEN months_to_maturity <= 36 THEN '1-3 Years'
+        WHEN months_to_maturity <= 60 THEN '3-5 Years'
+        WHEN months_to_maturity <= 120 THEN '5-10 Years'
         ELSE 'Over 10 Years'
     END as remaining_term_bucket
 FROM prepayment_metrics pm 

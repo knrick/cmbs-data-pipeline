@@ -204,13 +204,6 @@ models:
         tests:
           - not_null
 
-      - name: geo_id
-        description: "Foreign key reference to dim_geo_address for location-based analysis"
-        tests:
-          - relationships:
-              to: ref('dim_geo_address')
-              field: address_id
-
       - name: property_type_code
         description: "Standardized code indicating the property's primary use (e.g., RT for Retail, OF for Office)"
         tests:
@@ -223,19 +216,17 @@ models:
         tests:
           - not_null
 
+      - name: property_status_code
+        description: "Current status of the property (e.g., performing, REO, foreclosure)"
+        tests:
+          - not_null
+
       - name: year_built
         description: "Year the property was originally constructed"
         tests:
           - dbt_utils.accepted_range:
               min_value: 1800
               max_value: "{{ var('current_year') }}"
-
-      - name: unit_count
-        description: "Number of units, beds, or rooms depending on property type"
-        tests:
-          - dbt_utils.accepted_range:
-              min_value: 0
-              inclusive: true
 
       - name: square_feet
         description: "Net rentable area of the property in square feet"
@@ -244,23 +235,32 @@ models:
               min_value: 0
               inclusive: true
 
-      - name: property_status_code
-        description: "Current status of the property (e.g., performing, REO, foreclosure)"
+      - name: unit_count
+        description: "Number of units, beds, or rooms depending on property type"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: issuer
+        description: "Name of the CMBS issuer/company"
         tests:
           - not_null
 
       - name: trust_id
-        description: "Identifier of the CMBS trust that holds this property"
+        description: "Foreign key to the trust dimension"
         tests:
           - not_null
           - relationships:
               to: ref('dim_trust')
               field: trust_id
 
-      - name: issuer
-        description: "Name of the CMBS issuer/company"
+      - name: geo_id
+        description: "Foreign key to dim_geo_address for location-based analysis"
         tests:
-          - not_null
+          - relationships:
+              to: ref('dim_geo_address')
+              field: address_id
 
     tests:
       - dbt_utils.unique_combination_of_columns:
@@ -382,6 +382,30 @@ models:
               to: ref('dim_trust')
               field: trust_id
 
+      - name: current_bal
+        description: "Current outstanding balance of the loan"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: begin_bal
+        description: "Beginning balance for the reporting period"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: orig_bal
+        description: "Original loan balance at origination"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
       - name: delinquency_status
         description: "Delinquency status code (0-6, where 0 is current)"
         tests:
@@ -419,38 +443,6 @@ models:
           - accepted_values:
               values: ['Current', 'Delinquent < 90 Days', 'Delinquent 90+ Days', 'Other']
 
-      - name: current_bal
-        description: "Current outstanding balance of the loan"
-        tests:
-          - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-
-      - name: begin_bal
-        description: "Beginning balance for the reporting period"
-        tests:
-          - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-
-      - name: orig_bal
-        description: "Original loan balance at origination"
-        tests:
-          - not_null
-          - dbt_expectations.expect_column_values_to_be_between:
-              min_value: 0
-
-      - name: remaining_bal_pct
-        description: "Percentage of original balance remaining"
-        tests:
-          - dbt_utils.accepted_range:
-              min_value: 0
-              max_value: 1
-              inclusive: true
-
-      - name: bal_change_pct
-        description: "Percentage change in balance from beginning of period"
-
       - name: pmt_due
         description: "Total scheduled principal and interest payment due"
         tests:
@@ -474,6 +466,9 @@ models:
               max_value: 0.15
               inclusive: true
 
+      - name: payment_frequency
+        description: "Frequency of loan payments"
+
       - name: maturity_date
         description: "Date when the loan matures"
 
@@ -483,6 +478,37 @@ models:
           - dbt_expectations.expect_column_values_to_be_between:
               min_value: "'1980-01-01'"
               max_value: "CURRENT_DATE"
+
+      - name: issuer
+        description: "Name of the CMBS issuer/company"
+        tests:
+          - not_null
+
+      - name: remaining_bal_pct
+        description: "Percentage of original balance remaining"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1
+              inclusive: true
+
+      - name: months_to_maturity
+        description: >
+          Number of months remaining until maturity. Negative values indicate loans that are past maturity.
+          We keep past maturity loans in the fact table for historical analysis and because some may still
+          have balances or be in workout. Marts can filter these out with is_past_maturity if needed.
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: -120  # Allow up to 10 years past maturity
+              max_value: 600   # Allow up to 50 years to maturity
+              inclusive: true
+
+      - name: months_since_origination
+        description: "Number of months since loan origination"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
 
       - name: delinquent_amt
         description: "Amount of payment shortfall for delinquent loans"
@@ -783,16 +809,24 @@ models:
         description: "CMBS trust identifier"
         tests:
           - not_null
+          - relationships:
+              to: ref('dim_trust')
+              field: trust_id
 
       - name: property_type_code
         description: "Property type classification code"
         tests:
           - not_null
+          - accepted_values:
+              values: ['RT', 'OF', 'MF', 'IN', 'HC', 'LO', 'MU', 'SS', 'WH', 'MH']
 
       - name: property_state
         description: "State where the property is located"
         tests:
           - not_null
+          - relationships:
+              to: ref('dim_geo_state')
+              field: state_code
 
       - name: reporting_date
         description: "Date of the risk metrics calculation"
@@ -1513,145 +1547,6 @@ models:
               max_value: 10
               inclusive: true
 
-  - name: loan_aging_metrics
-    description: >
-      Detailed analysis of loan aging characteristics, prepayment behavior, and remaining term metrics.
-      This model calculates various prepayment speeds (PSA, CPR, SMM) and provides vintage analysis
-      for both origination and maturity dates.
-    columns:
-      - name: loan_id
-        description: "Unique identifier for the loan"
-        tests:
-          - not_null
-          - relationships:
-              to: ref('fct_loan_monthly_performance')
-              field: loan_id
-
-      - name: trust_id
-        description: "Identifier for the CMBS trust"
-        tests:
-          - not_null
-          - relationships:
-              to: ref('dim_trust')
-              field: trust_id
-
-      - name: reporting_date
-        description: "Date of the reporting period"
-        tests:
-          - not_null
-
-      - name: loan_age_months
-        description: "Age of the loan in months from origination"
-        tests:
-          - not_null
-          - dbt_utils.accepted_range:
-              min_value: 0
-              inclusive: true
-
-      - name: remaining_term_months
-        description: "Number of months remaining until maturity"
-        tests:
-          - not_null
-          - dbt_utils.accepted_range:
-              min_value: 0
-              inclusive: true
-
-      - name: original_term_months
-        description: "Original term of the loan in months"
-        tests:
-          - not_null
-          - dbt_utils.accepted_range:
-              min_value: 0
-              inclusive: true
-
-      - name: origination_date
-        description: "Date when the loan was originated"
-        tests:
-          - not_null
-
-      - name: psa_speed
-        description: "Public Securities Association prepayment speed"
-        tests:
-          - dbt_utils.accepted_range:
-              min_value: 0
-              max_value: 1000
-              inclusive: true
-
-      - name: cpr
-        description: "Conditional Prepayment Rate as a percentage"
-        tests:
-          - dbt_utils.accepted_range:
-              min_value: 0
-              max_value: 100
-              inclusive: true
-
-      - name: smm
-        description: "Single Monthly Mortality rate as a percentage"
-        tests:
-          - dbt_utils.accepted_range:
-              min_value: 0
-              max_value: 100
-              inclusive: true
-
-      - name: is_prepayment
-        description: "Flag indicating if prepayment occurred in this period"
-        tests:
-          - accepted_values:
-              values: [true, false]
-
-      - name: current_bal
-        description: "Current loan balance"
-        tests:
-          - not_null
-          - dbt_utils.accepted_range:
-              min_value: 0
-              inclusive: true
-
-      - name: orig_bal
-        description: "Original loan balance at origination"
-        tests:
-          - not_null
-          - dbt_utils.accepted_range:
-              min_value: 0
-              inclusive: true
-
-      - name: percent_remaining_balance
-        description: "Percentage of original balance remaining"
-        tests:
-          - dbt_utils.accepted_range:
-              min_value: 0
-              max_value: 100
-              inclusive: true
-
-      - name: origination_vintage_year
-        description: "Year of loan origination (truncated to year)"
-        tests:
-          - not_null
-
-      - name: origination_vintage_quarter
-        description: "Quarter of loan origination (truncated to quarter)"
-        tests:
-          - not_null
-
-      - name: maturity_vintage_year
-        description: "Year of loan maturity (truncated to year)"
-        tests:
-          - not_null
-
-      - name: loan_age_bucket
-        description: "Categorical bucket for loan age (0-1 Year, 1-2 Years, etc.)"
-        tests:
-          - not_null
-          - accepted_values:
-              values: ['0-1 Year', '1-2 Years', '2-3 Years', '3-5 Years', '5-7 Years', '7-10 Years', 'Over 10 Years']
-
-      - name: remaining_term_bucket
-        description: "Categorical bucket for remaining term (Under 1 Year, 1-3 Years, etc.)"
-        tests:
-          - not_null
-          - accepted_values:
-              values: ['Under 1 Year', '1-3 Years', '3-5 Years', '5-10 Years', 'Over 10 Years']
-
   - name: property_occupancy_noi
     description: >
       Detailed property occupancy trends and NOI analysis, including rolling metrics,
@@ -1674,11 +1569,16 @@ models:
         description: "Property type classification code"
         tests:
           - not_null
+          - accepted_values:
+              values: ['RT', 'OF', 'MF', 'IN', 'HC', 'LO', 'MU', 'SS', 'WH', 'MH']
 
       - name: state
         description: "State where the property is located"
         tests:
           - not_null
+          - relationships:
+              to: ref('dim_geo_state')
+              field: state_code
 
       - name: region
         description: "Geographic region of the property"
@@ -1792,3 +1692,148 @@ models:
           - dbt_utils.accepted_range:
               min_value: 0
               inclusive: true
+
+  - name: loan_aging_metrics
+    description: >
+      Detailed analysis of loan aging characteristics, prepayment behavior, and remaining term metrics.
+      This model calculates various prepayment speeds (PSA, CPR, SMM) and provides vintage analysis
+      for both origination and maturity dates.
+    columns:
+      - name: loan_id
+        description: "Unique identifier for the loan"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('fct_loan_monthly_performance')
+              field: loan_id
+
+      - name: trust_id
+        description: "Identifier for the CMBS trust"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_trust')
+              field: trust_id
+
+      - name: reporting_date
+        description: "Date of the reporting period"
+        tests:
+          - not_null
+
+      - name: loan_age_months
+        description: "Age of the loan in months from origination"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: months_to_maturity
+        description: "Number of months remaining until maturity (from fct_loan_monthly_performance)"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: -120  # Allow up to 10 years past maturity
+              max_value: 600   # Allow up to 50 years to maturity
+              inclusive: true
+
+      - name: original_term_months
+        description: "Original term of the loan in months"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: origination_date
+        description: "Date when the loan was originated"
+        tests:
+          - not_null
+
+      - name: maturity_date
+        description: "Date when the loan matures"
+        tests:
+          - not_null
+
+      - name: psa_speed
+        description: "Public Securities Association prepayment speed"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 1000
+              inclusive: true
+
+      - name: cpr
+        description: "Conditional Prepayment Rate as a percentage"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: true
+
+      - name: smm
+        description: "Single Monthly Mortality rate as a percentage"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: true
+
+      - name: is_prepayment
+        description: "Flag indicating if prepayment occurred in this period"
+        tests:
+          - accepted_values:
+              values: [true, false]
+
+      - name: current_bal
+        description: "Current loan balance"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: orig_bal
+        description: "Original loan balance at origination"
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+      - name: percent_remaining_balance
+        description: "Percentage of original balance remaining"
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+              inclusive: true
+
+      - name: origination_vintage_year
+        description: "Year of loan origination (truncated to year)"
+        tests:
+          - not_null
+
+      - name: origination_vintage_quarter
+        description: "Quarter of loan origination (truncated to quarter)"
+        tests:
+          - not_null
+
+      - name: maturity_vintage_year
+        description: "Year of loan maturity (truncated to year)"
+        tests:
+          - not_null
+
+      - name: loan_age_bucket
+        description: "Categorical bucket for loan age (0-1 Year, 1-2 Years, etc.)"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['0-1 Year', '1-2 Years', '2-3 Years', '3-5 Years', '5-7 Years', '7-10 Years', 'Over 10 Years']
+
+      - name: remaining_term_bucket
+        description: "Categorical bucket for remaining term (Under 1 Year, 1-3 Years, etc.)"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['Under 1 Year', '1-3 Years', '3-5 Years', '5-10 Years', 'Over 10 Years']
